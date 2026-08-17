@@ -1,0 +1,285 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Reset & base ────────────────────────────────────────────────────────── */
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background-color: #080b12;
+  color: #e2e8f0;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root { min-height: 100vh; }
+
+/* ── Scrollbar ───────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #2a3140; border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: #3b4559; }
+
+/* ── Keyframes ───────────────────────────────────────────────────────────── */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0);   }
+}
+
+@keyframes fadeDown {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+
+@keyframes slideRight {
+  from { opacity: 0; transform: translateX(-12px); }
+  to   { opacity: 1; transform: translateX(0);     }
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.93); }
+  to   { opacity: 1; transform: scale(1);    }
+}
+
+@keyframes shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position:  200% center; }
+}
+
+@keyframes glow-blue {
+  0%, 100% { box-shadow: 0 0 8px 2px rgba(59,130,246,0.25), 0 0 24px 4px rgba(59,130,246,0.12); }
+  50%       { box-shadow: 0 0 16px 4px rgba(96,165,250,0.4),  0 0 40px 8px rgba(96,165,250,0.18); }
+}
+
+@keyframes glow-amber {
+  0%, 100% { box-shadow: 0 0 8px 2px rgba(245,158,11,0.25); }
+  50%       { box-shadow: 0 0 18px 5px rgba(245,158,11,0.4); }
+}
+
+@keyframes glow-emerald {
+  0%, 100% { box-shadow: 0 0 8px 2px rgba(52,211,153,0.25); }
+  50%       { box-shadow: 0 0 18px 5px rgba(52,211,153,0.4); }
+}
+
+@keyframes spin-smooth {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1;   transform: scale(1);    }
+  50%       { opacity: 0.5; transform: scale(0.75); }
+}
+
+@keyframes bounce-subtle {
+  0%, 100% { transform: translateY(0);   }
+  50%       { transform: translateY(-3px); }
+}
+
+@keyframes progress-stripe {
+  from { background-position: 0 0; }
+  to   { background-position: 40px 0; }
+}
+
+@keyframes counter-pop {
+  0%   { transform: scale(1);    }
+  40%  { transform: scale(1.18); }
+  100% { transform: scale(1);    }
+}
+
+/* ── Animation utilities ─────────────────────────────────────────────────── */
+.animate-fade-up    { animation: fadeUp    0.35s cubic-bezier(.22,.68,0,1.2) both; }
+.animate-fade-down  { animation: fadeDown  0.3s  ease-out both; }
+.animate-slide-right{ animation: slideRight 0.28s cubic-bezier(.22,.68,0,1.1) both; }
+.animate-scale-in   { animation: scaleIn   0.25s cubic-bezier(.22,.68,0,1.2) both; }
+.animate-spin-smooth{ animation: spin-smooth 1.4s linear infinite; }
+.animate-pulse-dot  { animation: pulse-dot 1.2s ease-in-out infinite; }
+.animate-bounce-subtle { animation: bounce-subtle 2s ease-in-out infinite; }
+.animate-counter-pop{ animation: counter-pop 0.35s ease-out; }
+
+/* Staggered children */
+.stagger > *:nth-child(1) { animation-delay: 0ms;   }
+.stagger > *:nth-child(2) { animation-delay: 60ms;  }
+.stagger > *:nth-child(3) { animation-delay: 120ms; }
+.stagger > *:nth-child(4) { animation-delay: 180ms; }
+.stagger > *:nth-child(5) { animation-delay: 240ms; }
+
+/* ── Glow effects ────────────────────────────────────────────────────────── */
+.glow-blue    { animation: glow-blue    2s ease-in-out infinite; }
+.glow-amber   { animation: glow-amber   2s ease-in-out infinite; }
+.glow-emerald { animation: glow-emerald 2s ease-in-out infinite; }
+
+/* ── Glass panels ────────────────────────────────────────────────────────── */
+.glass {
+  background: rgba(15, 20, 30, 0.7);
+  backdrop-filter: blur(12px) saturate(160%);
+  -webkit-backdrop-filter: blur(12px) saturate(160%);
+  border: 1px solid rgba(255,255,255,0.06);
+}
+
+.glass-card {
+  background: linear-gradient(135deg, rgba(22,28,42,0.9) 0%, rgba(14,18,28,0.95) 100%);
+  border: 1px solid rgba(255,255,255,0.07);
+  backdrop-filter: blur(8px);
+}
+
+/* ── Gradient text ───────────────────────────────────────────────────────── */
+.gradient-text-blue {
+  background: linear-gradient(135deg, #60a5fa, #818cf8);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.gradient-text-emerald {
+  background: linear-gradient(135deg, #34d399, #6ee7b7);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.gradient-text-red {
+  background: linear-gradient(135deg, #f87171, #fca5a5);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.gradient-text-amber {
+  background: linear-gradient(135deg, #fbbf24, #fcd34d);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ── Shimmer loading text ────────────────────────────────────────────────── */
+.shimmer-text {
+  background: linear-gradient(90deg, #60a5fa 0%, #a78bfa 40%, #60a5fa 80%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: shimmer 2s linear infinite;
+}
+
+/* ── Progress bar ────────────────────────────────────────────────────────── */
+.progress-bar {
+  background: linear-gradient(90deg, #3b82f6, #8b5cf6, #a78bfa);
+  background-size: 200% 100%;
+  animation: shimmer 2.5s linear infinite;
+  position: relative;
+}
+
+.progress-bar-striped {
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(255,255,255,0.08) 0px,
+    rgba(255,255,255,0.08) 10px,
+    transparent 10px,
+    transparent 20px
+  );
+  animation: progress-stripe 1s linear infinite;
+}
+
+/* ── Queue item active state ─────────────────────────────────────────────── */
+.queue-item-active {
+  border-color: rgba(59,130,246,0.7) !important;
+  background: linear-gradient(135deg, rgba(30,58,138,0.25) 0%, rgba(17,24,39,0.8) 100%) !important;
+  box-shadow: 0 0 0 1px rgba(59,130,246,0.3), 0 4px 24px rgba(59,130,246,0.15);
+}
+
+/* ── Stat card hover ─────────────────────────────────────────────────────── */
+.stat-card {
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+}
+
+/* ── Button transitions ──────────────────────────────────────────────────── */
+.btn {
+  transition: all 0.18s cubic-bezier(.22,.68,0,1.2);
+  position: relative;
+  overflow: hidden;
+}
+.btn::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 50%, rgba(255,255,255,0.12) 0%, transparent 70%);
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+.btn:hover::after { opacity: 1; }
+.btn:active { transform: scale(0.97); }
+
+/* ── Input focus ring ────────────────────────────────────────────────────── */
+.input-field {
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease;
+}
+.input-field:focus {
+  box-shadow: 0 0 0 3px rgba(59,130,246,0.18);
+}
+
+/* ── Section header accent ───────────────────────────────────────────────── */
+.section-header {
+  position: relative;
+}
+.section-header::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 50%;
+  transform: translateY(-50%);
+  width: 3px; height: 14px;
+  border-radius: 2px;
+}
+
+/* ── Status badge pulse ──────────────────────────────────────────────────── */
+.badge-processing {
+  position: relative;
+}
+.badge-processing::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+  z-index: -1;
+  animation: glow-blue 2s ease-in-out infinite;
+  opacity: 0.5;
+}
+
+/* ── Log entry line ──────────────────────────────────────────────────────── */
+.log-entry {
+  position: relative;
+  padding-left: 1.25rem;
+  transition: background-color 0.15s ease;
+}
+.log-entry::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 2px;
+  border-radius: 1px;
+  opacity: 0.4;
+}
+.log-entry.log-success::before  { background: #34d399; }
+.log-entry.log-failure::before  { background: #f87171; }
+.log-entry.log-retry::before    { background: #fbbf24; }
+.log-entry.log-info::before     { background: #60a5fa; }
+.log-entry:hover { background: rgba(255,255,255,0.03); border-radius: 4px; }
+
+/* ── Attempt badge ───────────────────────────────────────────────────────── */
+.attempt-badge-success {
+  background: linear-gradient(135deg, rgba(5,46,22,0.8), rgba(6,78,59,0.6));
+  border: 1px solid rgba(52,211,153,0.3);
+  color: #6ee7b7;
+}
+.attempt-badge-fail {
+  background: linear-gradient(135deg, rgba(69,10,10,0.8), rgba(127,29,29,0.6));
+  border: 1px solid rgba(248,113,113,0.3);
+  color: #fca5a5;
+}
