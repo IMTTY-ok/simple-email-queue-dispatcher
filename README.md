@@ -1,109 +1,98 @@
 # Email Queue Dispatcher
 
-> A real-time email queue simulation dashboard built with React, TypeScript, and Tailwind CSS.
-> Demonstrates Queue (FIFO), Retry Logic, and Status Logging — designed for college project demonstrations and Data Structures vivas.
+> A **real SMTP email dispatcher** dashboard built with React + TypeScript (frontend) and Express + Nodemailer (backend).
+> Add emails → the server dequeues them **FIFO** → sends them over **real SMTP** → live delivery status is streamed back to the dashboard over **SSE**, with automatic retries on failure.
 
 ---
 
 ## Live Preview
 
-> Run locally with `npm run dev` → open [http://localhost:5173](http://localhost:5173)
+> Run both servers with one command:
+>
+> ```bash
+> npm install
+> npm run dev
+> ```
+>
+> Frontend: [http://localhost:5173](http://localhost:5173) · API: [http://localhost:5001/api](http://localhost:5001/api)
 
 ---
 
-## Screenshots
+## What changed from the simulation version
 
-| Dashboard | Processing & Retry | Activity Log |
-|-----------|-------------------|--------------|
-| Stats cards, queue visualization, controls | Live attempt progress bar, retry animation | Timestamped color-coded log entries |
+The first version simulated delivery in the browser (Random / Force-Success / Force-Failure, `PENDING`/`PROCESSING` statuses, localStorage).
+
+This version sends **real emails**:
+
+| Aspect | Simulation version | Real version |
+|--------|-------------------|--------------|
+| Sender | `Math.random()` | **Nodemailer → SMTP** (Gmail/Outlook/Zoho/any) |
+| Queue | in-browser state | **Express server** (in-memory) |
+| Status | `PENDING/PROCESSING` | `QUEUED/SENDING/RETRYING/DELIVERED/FAILED` |
+| Live updates | React state | **SSE** events pushed to the dashboard |
+| Delivery proof | none | SMTP `250 OK` response, `accepted` recipients, `messageId`, hard-bounce/refusal errors |
+| Persistence | localStorage | server memory (config survives via `.env`) |
 
 ---
 
 ## Features
 
-### Core Functionality
-- **Email Queue (FIFO)** — emails are processed strictly in the order they were added
-- **Retry Logic Engine** — failed deliveries are automatically retried up to 3 times (configurable 0–5)
-- **4 Total Attempts** — 1 initial + 3 retries = 4 maximum delivery attempts per email
-- **Simulation Modes** — Random (60% success), Force Success, Force Failure
-- **Start / Pause / Resume / Reset** — full processing lifecycle control
-- **Load Demo Data** — instantly load 5 sample emails for viva demonstrations
+### Real Email Sending
+- **SMTP via Nodemailer** — works with Gmail (App Password), Outlook, Zoho, college mail servers, or `smtp2go`-style relays
+- **Live dispatch status** — `DELIVERED` when the SMTP server accepts (250), `FAILED` when it refuses (bad recipient, auth error, host down)
+- **Test connection** button + **send a test email** button to validate credentials before dispatching
+- **Dry-run mode** — simulate the full queue/retry demo offline, no email account needed
 
-### Status System
-| Status | Description |
-|--------|-------------|
-| `PENDING` | Waiting in the queue |
-| `PROCESSING` | Currently being delivered |
-| `RETRYING` | Previous attempt failed, retrying |
-| `DELIVERED` | Successfully delivered |
-| `FAILED` | Exhausted all retry attempts |
+### Queue + Retry (real)
+- **FIFO** — emails processed strictly in insertion order (server-side)
+- **Bounded retry** — failed deliveries retried automatically up to a configurable `retryLimit` (1 initial + N retries)
+- **Start / Pause / Resume / Reset** — dispatcher lifecycle driven from the Header (pause is checked between attempts)
+- **Remove queued emails** — trash icon on any `QUEUED` item
+- **Load Demo Data** — one-click load of 5 sample emails
+
+### Status System (server-driven)
+| Status | Meaning |
+|--------|---------|
+| `QUEUED` | Waiting in the queue |
+| `SENDING` | Dispatcher is talking to the SMTP server |
+| `RETRYING` | Previous attempt failed; backing off before the next attempt |
+| `DELIVERED` | SMTP server accepted the message (250 OK) |
+| `FAILED` | SMTP refused the message after all attempts |
 
 ### Dashboard
-- **Animated stat counters** — numbers count up smoothly on change
-- **Live queue visualization** — FRONT → REAR with active item highlighted
-- **Processing panel** — current email, attempt progress bar with shimmer, attempt history
-- **Activity log** — real-time timestamped entries, color-coded by type
-- **Export** — download full dispatch report as CSV or JSON
-
-### Data Persistence
-- Queue state and activity log persist across page refreshes via **localStorage**
-- Processing/Retrying emails are safely reset to Pending on reload
+- **Animated stat counters** — Total / Delivered / Failed / Queued + Attempt & Retry totals
+- **Live FIFO queue visualization** — FRONT → REAR, active item highlighted, per-attempt badges
+- **Processing panel** — current email, attempt progress bar, per-attempt SMTP response / error
+- **Activity log** — real-time timestamped events streamed over SSE, color-coded
+- **SMTP settings panel** — host/port/secure/user/pass/from-identity, retry limit, dry-run toggle
+- **Export** — dispatch report (incl. SMTP response + error detail) as CSV or JSON
 
 ---
 
-## Tech Stack
-
-| Layer | Technology |
-|-------|------------|
-| Framework | React 18 + TypeScript |
-| Build Tool | Vite |
-| Styling | Tailwind CSS v3 |
-| Icons | Lucide React |
-| State | React hooks (`useState`, `useRef`, `useCallback`) |
-| Storage | `localStorage` |
-
-No backend. No real emails. Pure frontend simulation.
-
----
-
-## Project Structure
+## Architecture
 
 ```
-email-queue-dispatcher/
-│
-├── src/
-│   ├── components/
-│   │   ├── Header.tsx           # Sticky nav with Start/Pause/Reset controls
-│   │   ├── StatsCards.tsx       # Animated stat cards (Total, Delivered, Failed, Pending)
-│   │   ├── AddEmailForm.tsx     # Email creation form with validation
-│   │   ├── QueuePanel.tsx       # FIFO queue visualization (FRONT → REAR)
-│   │   ├── QueueItem.tsx        # Individual queue card with status badge
-│   │   ├── ProcessingPanel.tsx  # Active processing view with progress bar
-│   │   ├── ActivityLog.tsx      # Live color-coded activity log
-│   │   ├── SimulationControls.tsx # Mode, retry limit, speed controls
-│   │   └── ExportPanel.tsx      # Summary stats table + CSV/JSON export
-│   │
-│   ├── hooks/
-│   │   └── useEmailQueue.ts     # Central state + async processing engine
-│   │
-│   ├── utils/
-│   │   ├── queue.ts             # FIFO helpers, stats, ID generation, validation
-│   │   ├── retryLogic.ts        # maxAttempts(), getDelay(), sleep()
-│   │   ├── simulator.ts         # simulateDelivery() — Random / Force modes
-│   │   └── exportReport.ts      # CSV + JSON export generators + file download
-│   │
-│   ├── types/
-│   │   └── email.ts             # All TypeScript interfaces and types
-│   │
-│   ├── App.tsx                  # Root layout
-│   └── main.tsx                 # React entry point
-│
-├── public/
-├── index.html
-├── package.json
-├── tailwind.config.js
-├── vite.config.ts
-└── tsconfig.json
+┌────────────────────────────┐        SSE (live events)         ┌────────────────────────────┐
+│   React dashboard (Vite)   │ ◄──────────────────────────────── │   Express + Nodemailer     │
+│   :5173                    │        REST (emails/config/…)    │   :5001/server              │
+│   useEmailDispatcher hook  │ ────────────────────────────────► │   Queue store (FIFO)        │
+└────────────────────────────┘    POST /api/emails, /dispatch   │   Dispatcher loop + retry  │
+                                                                 │   SMTP transport           │
+                                                                 └──────────────┬─────────────┘
+                                                                                │ SMTP (250 OK / 550 etc.)
+                                                                        ┌───────▼─────────┐
+                                                                        │  Mail server     │
+                                                                        └─────────────────┘
+```
+
+```
+Email lifecycle:
+
+  QUEUED ──► SENDING ──► DELIVERED          (SMTP accepted → 250 OK)
+     │          │
+     │          └── failure ──► RETRYING ──► SENDING ──► … ──► FAILED
+     │                             (bounded by retryLimit)
+     └── removed by user → gone
 ```
 
 ---
@@ -111,52 +100,67 @@ email-queue-dispatcher/
 ## Getting Started
 
 ### Prerequisites
-- Node.js 18+
-- npm 9+
+- Node.js 18+ and npm
+- An SMTP account. Gmail example: enable 2FA → create an **App Password** (`myaccount.google.com → Security → App passwords`).
 
-### Installation
-
-```bash
-# Clone the repository
-git clone https://github.com/IMTTY-ok/My-second.git
-cd My-second
-
-# Install dependencies
-npm install
-
-# Start the development server
-npm run dev
-```
-
-Open [http://localhost:5173](http://localhost:5173) in your browser.
-
-### Build for Production
+### Run
 
 ```bash
-npm run build
+# 1. install everything
+npm install                 # frontend deps
+npm --prefix server install # server deps
+
+# 2. (optional) real SMTP via env — or use the dashboard Settings panel instead
+copy server\.env.example server\.env   # then fill in your SMTP credentials
+
+# 3. run both servers
+npm run dev                 # API on 5001 (watch mode) + dashboard on 5173
 ```
 
-Output is in the `dist/` folder.
+> The dashboard's **SMTP Dispatcher Settings** panel can configure SMTP at runtime (no restart needed).
+> No `.env` needed for the demo — just tick **Dry-run** and load demo data.
+
+### Demo walkthrough
+1. Open [http://localhost:5173](http://localhost:5173)
+2. **Settings** → enable **Dry-run** → **Save Config** → **Load Demo Data**
+3. Click **Start** — watch 5 emails go `QUEUED → SENDING → DELIVERED`
+4. For a failure demo: enter a made-up recipient + a bogus SMTP host, Save, Start → watch retries then `FAILED`
+5. For real email: fill in your SMTP credentials → **Test Connection** → **send a test email** to yourself → Start
 
 ---
 
-## How to Use
+## API Reference (server :5001)
 
-### Basic Demo
-1. Click **Load Demo Data** to add 5 sample emails to the queue
-2. Select **Force Failure** mode to demonstrate full retry logic
-3. Click **Start** — watch each email attempt 4 times and fail
-4. Change to **Force Success** — click **Reset** → **Load Demo Data** → **Start**
-5. Watch all emails deliver on the first attempt
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| GET | `/api/health` | service health, dispatcher state, stats |
+| GET/POST | `/api/config` | read / update SMTP + dispatcher config |
+| POST | `/api/config/test` | verify the SMTP connection |
+| POST | `/api/config/test-send` | send an immediate test email to a recipient |
+| GET | `/api/emails` | all emails with statuses + logs |
+| POST | `/api/emails` | enqueue one email |
+| POST | `/api/emails/batch` | enqueue many emails |
+| DELETE | `/api/emails/:id` | remove an email from the queue |
+| GET | `/api/activity` · `/api/stats` | activity log / live stats |
+| POST | `/api/dispatch/start·pause·resume·stop·reset` | dispatcher lifecycle |
+| GET | `/api/events` | **SSE** — snapshot + live `email`/`activity`/`stats`/`dispatcher`/`config` events |
 
-### Manual Demo
-1. Fill in the **Add Email** form (Recipient, Subject, Message)
-2. Click **Add to Queue** — note the auto-generated Email ID and queue position
-3. Add several more emails
-4. Configure **Retry Limit** and **Processing Speed** in the controls panel
-5. Click **Start Processing**
-6. Pause mid-processing with **Pause** and resume with **Start**
-7. After processing, click **Export CSV** or **Export JSON**
+---
+
+## Configuration
+
+All values can come from `server/.env` or the dashboard Settings panel:
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `PORT` | `5001` | API port |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_SECURE` | — / `587` / `false` | mail server (587 = StartTLS, 465 = SSL) |
+| `SMTP_USER` / `SMTP_PASS` | — | login (Gmail: App Password) |
+| `FROM_NAME` / `FROM_EMAIL` | `Email Dispatcher` | sender identity shown to recipients |
+| `RETRY_LIMIT` | `3` | retries after the initial attempt |
+| `RETRY_DELAY_MS` / `INTER_EMAIL_DELAY_MS` | `3000` / `1200` | backoff / inter-email pacing |
+| `SMTP_DRYRUN` | `false` | simulate delivery without SMTP |
+| `ALLOWED_ORIGIN` | `*` | CORS origin |
 
 ---
 
@@ -164,116 +168,106 @@ Output is in the `dist/` folder.
 
 ```typescript
 interface Email {
-  id: string;           // "EML-001"
-  recipient: string;    // "student@example.com"
+  id: string;              // "EML-001"
+  recipient: string;
   subject: string;
   message: string;
-  senderName?: string;
-  status: 'PENDING' | 'PROCESSING' | 'RETRYING' | 'DELIVERED' | 'FAILED';
-  attempts: number;     // total delivery attempts made
-  retries: number;      // number of retries (attempts - 1)
-  createdAt: string;    // ISO timestamp
-  updatedAt: string;    // ISO timestamp
+  status: 'QUEUED' | 'SENDING' | 'RETRYING' | 'DELIVERED' | 'FAILED';
+  attempts: number;        // SMTP attempts made
+  retries: number;         // attempts - 1
+  retryLimit: number;
+  createdAt / updatedAt: string;
   finalStatus: 'DELIVERED' | 'FAILED' | null;
-  logs: AttemptLog[];   // per-attempt result history
+  socketErr: string | null;               // last delivery error, if FAILED
+  smtp: { accepted: string[]; response: string; messageId: string } | null;
+  logs: { attempt: number; result: 'SUCCESS' | 'FAILURE'; detail?: string; timestamp: string }[];
 }
 ```
 
 ---
 
-## Retry Algorithm
+## Project Structure
 
 ```
-Take email from front of queue
+email1/
+│
+├── src/                            # Frontend (React + TS + Tailwind)
+│   ├── components/
+│   │   ├── Header.tsx              # Start/Pause/Reset + server connection pill
+│   │   ├── SettingsPanel.tsx       # SMTP config, retry limit, dry-run, test send
+│   │   ├── AddEmailForm.tsx        # Real email form (POST /api/emails)
+│   │   ├── QueuePanel.tsx          # FIFO visualization
+│   │   ├── QueueItem.tsx           # Status badge, attempt badges, remove button
+│   │   ├── ProcessingPanel.tsx     # Live attempt progress + SMTP response
+│   │   ├── StatsCards.tsx          # Animated counters
+│   │   ├── ActivityLog.tsx         # SSE-driven log
+│   │   └── ExportPanel.tsx         # Summary + CSV/JSON export
+│   ├── hooks/useEmailDispatcher.ts # REST client + SSE subscription + actions
+│   ├── utils/ (queue.ts, exportReport.ts)
+│   ├── types/email.ts
+│   └── App.tsx
+│
+├── server/                         # Backend (Node + Express + Nodemailer)
+│   ├── src/
+│   │   ├── index.js                # app bootstrap
+│   │   ├── routes.js               # REST + SSE routes
+│   │   ├── config.js               # env + runtime config (secrets sanitized)
+│   │   ├── transport.js            # Nodemailer SMTP transport + dry-run stub
+│   │   ├── store.js                # in-memory FIFO queue, log, stats
+│   │   ├── dispatcher.js           # async dispatching loop + retry engine
+│   │   └── sse.js                  # Server-Sent Events hub
+│   └── .env.example
+│
+├── vite.config.ts                  # /api -> localhost:5001 proxy
+└── package.json                    # npm run dev runs BOTH apps (concurrently)
+```
+
+---
+
+## How the dispatcher works
+
+```
+take email from front of queue        (FIFO)
+mark SENDING → consumers notified over SSE
+
 attempt = 1
-
-WHILE attempt <= maxAttempts (default: 4)
-    Simulate delivery
-
-    IF success
-        Mark DELIVERED → stop
-
-    ELSE
-        Log failure
-        IF attempt == maxAttempts
-            Mark FAILED → stop
-        ELSE
-            Mark RETRYING
-            Wait (delay based on speed setting)
-            attempt++
-
-Move to next email
+WHILE attempt <= retryLimit + 1
+    sendMail() over SMTP
+    IF server accepts (250)  → mark DELIVERED (store smtp.response, messageId) → stop
+    ELSE (refusal / error)   → log attempt FAILURE
+                               IF last attempt → mark FAILED (store socketErr) → stop
+                               ELSE → mark RETRYING, backoff(retryDelayMs), attempt++
+move to the next queued email
 ```
 
----
-
-## Simulation Modes
-
-| Mode | Behaviour |
-|------|-----------|
-| **Random** | Each attempt has a 60% chance of success |
-| **Force Success** | Every attempt succeeds immediately |
-| **Force Failure** | Every attempt fails (best for retry demo) |
-
----
-
-## Processing Speed
-
-| Speed | Delay per attempt |
-|-------|------------------|
-| Slow | 2 seconds |
-| Normal | 1 second |
-| Fast | 0.4 seconds |
+- Resolved `sendMail()` → **DELIVERED** (message accepted by the mail server).
+- Thrown `sendMail()` (e.g. `550 recipient rejected`, `ENOTFOUND`, bad auth) → **failure path**, bounded retries, then `FAILED`.
+- Pause is cooperative: the loop checks the pause flag before each attempt and during backoff.
 
 ---
 
 ## Edge Cases Handled
 
-- Empty queue — shows warning when Start is clicked with no pending emails
-- Invalid email address — inline validation with clear error message
-- Empty subject / message — form prevents submission
-- Reset while processing — confirmation dialog
-- Page refresh mid-processing — queue restored, active emails reset to Pending
-- Retry limit enforcement — never exceeds configured maximum attempts
-
----
-
-## Export Format
-
-### CSV
-Each row contains: Email ID, Recipient, Subject, Sender Name, Status, Attempts, Retries, Final Status, Created At, Updated At, Attempt Logs
-
-### JSON
-```json
-{
-  "exportedAt": "2026-08-17T...",
-  "summary": {
-    "totalEmails": 10,
-    "delivered": 8,
-    "failed": 2,
-    "totalAttempts": 19,
-    "totalRetries": 9,
-    "successRate": "80%",
-    "failureRate": "20%"
-  },
-  "emails": [ ... ]
-}
-```
+- Start with an empty queue → clear warning from the server
+- Start with no SMTP configured (and no dry-run) → guarded error from the dispatcher
+- Invalid recipient / subject / message → 400 with a readable message
+- Reset while dispatching → confirmation dialog
+- Multiple dashboards open → all stay in sync via the SSE hub
+- Server crash mid-send → queue is in memory; restart and re-dispatch
+- Retry limit clamped 0–10 server-side; never exceeds configured attempts
 
 ---
 
 ## Concepts Demonstrated
 
-This project is designed to visually demonstrate the following **Data Structures and Algorithms** concepts:
-
 | Concept | Implementation |
 |---------|---------------|
-| **Queue** | `Email[]` array — enqueue at rear, dequeue from front |
-| **FIFO** | Emails always processed in insertion order |
-| **Retry Pattern** | Bounded retry loop with configurable max attempts |
-| **State Machine** | Emails transition through well-defined status states |
-| **Async Processing** | Non-blocking UI using `async/await` + `requestAnimationFrame` |
-| **Observer Pattern** | React state drives real-time UI updates |
+| **Queue / FIFO** | `emails[]` server-side, dequeue from front via `nextQueued()` |
+| **Retry pattern** | bounded retry loop with configurable limit and backoff |
+| **State machine** | QUEUED → SENDING → (RETRYING) → DELIVERED / FAILED |
+| **Async processing** | non-blocking `async/await` dispatcher; UI stays live |
+| **Live streaming** | SSE server-push to the observer-style dashboard |
+| **Clean separation** | queue store, transport, dispatcher, routes, SSE hub |
 
 ---
 

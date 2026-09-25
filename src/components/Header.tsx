@@ -3,12 +3,13 @@ import { Play, Pause, RotateCcw, Mail, Activity, Zap } from 'lucide-react';
 interface HeaderProps {
   isProcessing: boolean;
   isPaused: boolean;
+  connected: boolean;
   onStart: () => void;
   onPause: () => void;
   onReset: () => void;
 }
 
-export function Header({ isProcessing, isPaused, onStart, onPause, onReset }: HeaderProps) {
+export function Header({ isProcessing, isPaused, connected, onStart, onPause, onReset }: HeaderProps) {
   return (
     <header className="sticky top-0 z-50 border-b border-white/[0.06]"
       style={{ background: 'rgba(8,11,18,0.85)', backdropFilter: 'blur(20px) saturate(180%)' }}
@@ -35,8 +36,22 @@ export function Header({ isProcessing, isPaused, onStart, onPause, onReset }: He
               <h1 className="font-bold text-base sm:text-lg leading-tight tracking-tight text-white">
                 Email Queue Dispatcher
               </h1>
-              <p className="text-gray-500 text-xs leading-tight">Queue Management &amp; Retry Simulation</p>
+              <p className="text-gray-500 text-xs leading-tight">Real SMTP Dispatch &amp; Queue Retry</p>
             </div>
+          </div>
+
+          {/* Server connection pill */}
+          <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full border"
+            style={{
+              border: connected ? '1px solid rgba(52,211,153,0.25)' : '1px solid rgba(248,113,113,0.25)',
+              background: connected ? 'rgba(5,46,22,0.35)' : 'rgba(69,10,10,0.35)',
+            }}
+            title={connected ? 'Connected to dispatcher server' : 'Dispatcher server unreachable'}
+          >
+            <span className={`w-1.5 h-1.5 rounded-full ${connected ? 'bg-emerald-400' : 'bg-red-400'} animate-pulse-dot`} />
+            <span className="text-xs font-medium" style={{ color: connected ? '#6ee7b7' : '#fca5a5' }}>
+              {connected ? 'Server' : 'Offline'}
+            </span>
           </div>
 
           {/* Center status pill */}

@@ -34,7 +34,7 @@ export function ExportPanel({ emails, stats }: ExportPanelProps) {
           <div className="flex items-center gap-2 mb-3 pb-2 border-b border-white/[0.05]">
             <TrendingUp className="w-4 h-4" style={{ color: '#34d399' }} />
             <span className="text-sm font-bold" style={{ color: '#6ee7b7' }}>
-              {stats.pending === 0 && stats.processing === 0 && stats.retrying === 0
+              {stats.queued === 0 && stats.sending === 0 && stats.retrying === 0
                 ? 'DISPATCH COMPLETE'
                 : 'IN PROGRESS'}
             </span>
@@ -45,7 +45,7 @@ export function ExportPanel({ emails, stats }: ExportPanelProps) {
           { label: 'Total Emails',    value: stats.total,        color: '#60a5fa' },
           { label: 'Delivered',        value: stats.delivered,    color: '#34d399' },
           { label: 'Failed',           value: stats.failed,       color: '#f87171' },
-          { label: 'Pending',          value: stats.pending,      color: '#64748b' },
+          { label: 'Queued',           value: stats.queued,      color: '#64748b' },
           { label: 'Total Attempts',   value: stats.totalAttempts, color: '#a78bfa' },
           { label: 'Total Retries',    value: stats.totalRetries, color: '#fbbf24' },
         ].map((item) => (
@@ -139,7 +139,7 @@ export function ExportPanel({ emails, stats }: ExportPanelProps) {
             CSV
           </button>
           <button
-            onClick={() => downloadJSON(emails)}
+            onClick={() => downloadJSON(emails, stats)}
             disabled={!hasData}
             className="btn flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-40 disabled:cursor-not-allowed"
             style={{ background: hasData ? 'linear-gradient(135deg, #4338ca, #6d28d9)' : 'rgba(255,255,255,0.05)' }}

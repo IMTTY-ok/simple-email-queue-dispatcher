@@ -1,0 +1,20 @@
+{
+  "name": "email-queue-dispatcher-server",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Real SMTP sending + queue dispatcher for the Email Queue Dispatcher dashboard",
+  "scripts": {
+    "dev": "node --watch src/index.js",
+    "start": "node src/index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "nodemailer": "^10.0.10"
+  }
+}

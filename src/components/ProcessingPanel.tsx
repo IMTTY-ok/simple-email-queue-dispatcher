@@ -1,39 +1,36 @@
-import { Cpu, RefreshCw, CheckCircle, XCircle, Mail, Inbox } from 'lucide-react';
+import { Cpu, RefreshCw, CheckCircle, XCircle, Mail, Inbox, Send } from 'lucide-react';
 import type { Email } from '../types/email';
-import { maxAttempts } from '../utils/retryLogic';
 
 interface ProcessingPanelProps {
   currentEmail: Email | null;
   isProcessing: boolean;
   isPaused: boolean;
-  pendingCount: number;
-  retryLimit: number;
+  queuedCount: number;
+  canSend: boolean;
 }
 
 const STATUS_META = {
-  PROCESSING: { text: 'Sending…', color: '#60a5fa', gradient: 'linear-gradient(135deg,#2563eb,#4f46e5)' },
-  RETRYING:   { text: 'Retrying…', color: '#fcd34d', gradient: 'linear-gradient(135deg,#d97706,#f59e0b)' },
-  DELIVERED:  { text: 'Delivered!', color: '#6ee7b7', gradient: 'linear-gradient(135deg,#059669,#10b981)' },
-  FAILED:     { text: 'Failed',     color: '#fca5a5', gradient: 'linear-gradient(135deg,#dc2626,#ef4444)' },
-  PENDING:    { text: 'Pending',    color: '#94a3b8', gradient: 'linear-gradient(135deg,#475569,#64748b)' },
+  SENDING:   { text: 'Sending…', color: '#60a5fa', gradient: 'linear-gradient(135deg,#2563eb,#4f46e5)' },
+  RETRYING:  { text: 'Retrying…', color: '#fcd34d', gradient: 'linear-gradient(135deg,#d97706,#f59e0b)' },
+  DELIVERED: { text: 'Delivered!', color: '#6ee7b7', gradient: 'linear-gradient(135deg,#059669,#10b981)' },
+  FAILED:    { text: 'Failed',     color: '#fca5a5', gradient: 'linear-gradient(135deg,#dc2626,#ef4444)' },
+  QUEUED:    { text: 'Queued',     color: '#94a3b8', gradient: 'linear-gradient(135deg,#475569,#64748b)' },
 };
 
 export function ProcessingPanel({
   currentEmail,
   isProcessing,
   isPaused,
-  pendingCount,
-  retryLimit,
+  queuedCount,
+  canSend,
 }: ProcessingPanelProps) {
-  const totalAttempts = maxAttempts(retryLimit);
   const meta = currentEmail ? STATUS_META[currentEmail.status] : null;
 
-  const rawProgress = currentEmail
-    ? (currentEmail.attempts / totalAttempts) * 100
-    : 0;
+  const totalAttempts = currentEmail ? currentEmail.retryLimit + 1 : 0;
+  const rawProgress = currentEmail ? (currentEmail.attempts / totalAttempts) * 100 : 0;
   const progressPercent = Math.max(
     rawProgress,
-    currentEmail?.status === 'PROCESSING' ? 8 : 0
+    currentEmail?.status === 'SENDING' || currentEmail?.status === 'RETRYING' ? 8 : 0
   );
 
   return (
@@ -63,7 +60,14 @@ export function ProcessingPanel({
               style={{ background: 'rgba(37,99,235,0.15)', border: '1px solid rgba(99,102,241,0.3)', color: '#93c5fd' }}
             >
               <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse-dot" />
-              ACTIVE
+              LIVE
+            </span>
+          )}
+          {!canSend && (
+            <span className="px-2 py-0.5 rounded-full text-xs font-semibold"
+              style={{ background: 'rgba(217,119,6,0.15)', border: '1px solid rgba(245,158,11,0.3)', color: '#fcd34d' }}
+            >
+              DRY-RUN
             </span>
           )}
         </div>
@@ -80,19 +84,19 @@ export function ProcessingPanel({
             </div>
             <p className="text-gray-500 text-sm font-medium">No active processing</p>
             <p className="text-gray-700 text-xs mt-1">
-              {pendingCount > 0
-                ? `${pendingCount} email${pendingCount !== 1 ? 's' : ''} waiting — click Start`
+              {queuedCount > 0
+                ? `${queuedCount} email${queuedCount !== 1 ? 's' : ''} waiting — click Start`
                 : 'Add emails and click Start'}
             </p>
           </div>
         )}
 
-        {/* Processing done */}
+        {/* Processing done / waiting for next */}
         {!currentEmail && isProcessing && (
           <div className="flex-1 flex flex-col items-center justify-center text-center px-6 animate-fade-up">
-            <Cpu className="w-10 h-10 text-purple-700 mb-3 animate-pulse" />
-            <p className="text-gray-400 text-sm font-medium">Processing complete</p>
-            <p className="text-gray-600 text-xs mt-1">All emails processed</p>
+            <Send className="w-10 h-10 text-purple-700 mb-3 animate-pulse" />
+            <p className="text-gray-400 text-sm font-medium">Dispatcher running</p>
+            <p className="text-gray-600 text-xs mt-1">Waiting for next queued email…</p>
           </div>
         )}
 
@@ -135,6 +139,20 @@ export function ProcessingPanel({
                   )}
                   <span>{meta.text}</span>
                 </div>
+
+                {/* SMTP detail */}
+                {currentEmail.smtp?.response && currentEmail.status === 'DELIVERED' && (
+                  <p className="text-xs font-mono text-center max-w-full truncate px-2"
+                    style={{ color: '#34d399' }}>
+                    ✓ {currentEmail.smtp.response}
+                  </p>
+                )}
+                {currentEmail.socketErr && currentEmail.status === 'FAILED' && (
+                  <p className="text-xs font-mono text-center max-w-full break-words px-2"
+                    style={{ color: '#f87171' }}>
+                    ✗ {currentEmail.socketErr}
+                  </p>
+                )}
               </div>
             )}
 
@@ -151,7 +169,7 @@ export function ProcessingPanel({
                   className="absolute inset-y-0 left-0 rounded-full progress-bar transition-all duration-700 ease-out"
                   style={{ width: `${progressPercent}%` }}
                 />
-                {(currentEmail.status === 'PROCESSING' || currentEmail.status === 'RETRYING') && (
+                {(currentEmail.status === 'SENDING' || currentEmail.status === 'RETRYING') && (
                   <div
                     className="absolute inset-0 progress-bar-striped opacity-40 rounded-full"
                     style={{ width: `${progressPercent}%` }}
@@ -168,7 +186,7 @@ export function ProcessingPanel({
                   {currentEmail.logs.map((log, i) => (
                     <div
                       key={log.attempt}
-                      className="flex items-center justify-between text-xs px-3 py-2 rounded-lg animate-fade-up"
+                      className="flex flex-col gap-0.5 text-xs px-3 py-2 rounded-lg animate-fade-up"
                       style={{
                         animationDelay: `${i * 50}ms`,
                         background: log.result === 'SUCCESS'
@@ -179,10 +197,17 @@ export function ProcessingPanel({
                           : '1px solid rgba(248,113,113,0.2)',
                       }}
                     >
-                      <span className="text-gray-500">Attempt {log.attempt}</span>
-                      <span className={`font-semibold ${log.result === 'SUCCESS' ? 'text-emerald-400' : 'text-red-400'}`}>
-                        {log.result === 'SUCCESS' ? '✓ SUCCESS' : '✗ FAILED'}
-                      </span>
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-500">Attempt {log.attempt}</span>
+                        <span className={`font-semibold ${log.result === 'SUCCESS' ? 'text-emerald-400' : 'text-red-400'}`}>
+                          {log.result === 'SUCCESS' ? '✓ SUCCESS' : '✗ FAILED'}
+                        </span>
+                      </div>
+                      {log.detail && (
+                        <p className="font-mono text-[10px] leading-snug opacity-70" style={{ color: log.result === 'SUCCESS' ? '#6ee7b7' : '#fca5a5' }}>
+                          {log.detail}
+                        </p>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -192,7 +217,7 @@ export function ProcessingPanel({
             {/* Queue remaining */}
             <div className="mt-auto pt-3 border-t border-white/[0.05] text-center">
               <p className="text-xs text-gray-600">
-                {pendingCount} email{pendingCount !== 1 ? 's' : ''} remaining in queue
+                {queuedCount} email{queuedCount !== 1 ? 's' : ''} remaining in queue
               </p>
             </div>
           </div>

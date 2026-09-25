@@ -3,7 +3,7 @@ import { PlusCircle, X, CheckCircle, AlertCircle, AtSign, Type, MessageSquare, U
 import type { EmailFormData } from '../types/email';
 
 interface AddEmailFormProps {
-  onAdd: (form: EmailFormData) => { success: boolean; error?: string; emailId?: string; position?: number };
+  onAdd: (form: EmailFormData) => Promise<{ success: boolean; error?: string; emailId?: string; position?: number }>;
   disabled?: boolean;
 }
 
@@ -72,6 +72,7 @@ function Field({ id, label, required, icon, type, placeholder, rows, value, erro
 
 export function AddEmailForm({ onAdd, disabled }: AddEmailFormProps) {
   const [form, setForm] = useState<EmailFormData>(EMPTY_FORM);
+  const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{
     type: 'success' | 'error';
     message: string;
@@ -79,6 +80,8 @@ export function AddEmailForm({ onAdd, disabled }: AddEmailFormProps) {
     position?: number;
   } | null>(null);
   const [touched, setTouched] = useState<Record<string, boolean>>({});
+
+  const isDisabled = disabled || submitting;
 
   const handleChange = (field: keyof EmailFormData, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -96,10 +99,12 @@ export function AddEmailForm({ onAdd, disabled }: AddEmailFormProps) {
     return null;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setTouched({ recipient: true, subject: true, message: true });
-    const result = onAdd(form);
+    setSubmitting(true);
+    const result = await onAdd(form);
+    setSubmitting(false);
     if (result.success) {
       setFeedback({ type: 'success', message: 'Email added to queue', emailId: result.emailId, position: result.position });
       setForm(EMPTY_FORM);
@@ -155,7 +160,7 @@ export function AddEmailForm({ onAdd, disabled }: AddEmailFormProps) {
           icon={<AtSign size={12} />}
           type="email" placeholder="student@example.com"
           value={form.recipient} error={getError('recipient')}
-          disabled={disabled}
+          disabled={isDisabled}
           onChange={(v) => handleChange('recipient', v)}
           onBlur={() => setTouched((p) => ({ ...p, recipient: true }))}
         />
@@ -164,7 +169,7 @@ export function AddEmailForm({ onAdd, disabled }: AddEmailFormProps) {
           icon={<Type size={12} />}
           placeholder="Assignment Submission"
           value={form.subject} error={getError('subject')}
-          disabled={disabled}
+          disabled={isDisabled}
           onChange={(v) => handleChange('subject', v)}
           onBlur={() => setTouched((p) => ({ ...p, subject: true }))}
         />
@@ -173,7 +178,7 @@ export function AddEmailForm({ onAdd, disabled }: AddEmailFormProps) {
           icon={<MessageSquare size={12} />}
           placeholder="Your message content…"
           value={form.message} error={getError('message')}
-          disabled={disabled}
+          disabled={isDisabled}
           onChange={(v) => handleChange('message', v)}
           onBlur={() => setTouched((p) => ({ ...p, message: true }))}
         />
@@ -182,7 +187,7 @@ export function AddEmailForm({ onAdd, disabled }: AddEmailFormProps) {
           icon={<User size={12} />}
           placeholder="Your Name (optional)"
           value={form.senderName} error={null}
-          disabled={disabled}
+          disabled={isDisabled}
           onChange={(v) => handleChange('senderName', v)}
           onBlur={() => {}}
         />
@@ -190,17 +195,17 @@ export function AddEmailForm({ onAdd, disabled }: AddEmailFormProps) {
         <div className="flex gap-2 pt-1">
           <button
             type="submit"
-            disabled={disabled}
+            disabled={isDisabled}
             className="btn flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-white text-sm font-semibold disabled:opacity-50"
             style={{ background: 'linear-gradient(135deg, #2563eb, #4f46e5)' }}
           >
             <PlusCircle className="w-4 h-4" />
-            Add to Queue
+            {submitting ? 'Adding…' : 'Add to Queue'}
           </button>
           <button
             type="button"
             onClick={() => { setForm(EMPTY_FORM); setFeedback(null); setTouched({}); }}
-            disabled={disabled}
+            disabled={isDisabled}
             className="btn px-4 py-2.5 rounded-xl text-sm font-medium disabled:opacity-50"
             style={{
               background: 'rgba(255,255,255,0.05)',

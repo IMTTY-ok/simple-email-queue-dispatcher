@@ -1,20 +1,24 @@
-// Email status types
-export type EmailStatus = 'PENDING' | 'PROCESSING' | 'RETRYING' | 'DELIVERED' | 'FAILED';
+// Real-dispatch statuses (server-driven)
+export type EmailStatus = 'QUEUED' | 'SENDING' | 'RETRYING' | 'DELIVERED' | 'FAILED';
 
-// Simulation modes
-export type SimulationMode = 'RANDOM' | 'FORCE_SUCCESS' | 'FORCE_FAILURE';
+export type ActivityType = 'info' | 'success' | 'failure' | 'retry' | 'warning';
 
-// Processing speed
-export type ProcessingSpeed = 'SLOW' | 'NORMAL' | 'FAST';
-
-// Individual attempt log
+// Individual SMTP attempt result
 export interface AttemptLog {
   attempt: number;
   result: 'SUCCESS' | 'FAILURE';
+  detail?: string;
   timestamp: string;
 }
 
-// Email object
+// Data returned by the SMTP server after a successful send
+export interface SmtpInfo {
+  accepted: string[];
+  response: string;
+  messageId: string;
+}
+
+// One email, as stored + streamed by the dispatcher server
 export interface Email {
   id: string;
   recipient: string;
@@ -24,40 +28,53 @@ export interface Email {
   status: EmailStatus;
   attempts: number;
   retries: number;
+  retryLimit: number;
   createdAt: string;
   updatedAt: string;
   finalStatus: 'DELIVERED' | 'FAILED' | null;
+  socketErr: string | null;
+  smtp: SmtpInfo | null;
   logs: AttemptLog[];
 }
 
-// Activity log entry
 export interface ActivityEntry {
   id: string;
   emailId: string;
   message: string;
-  type: 'info' | 'success' | 'failure' | 'retry' | 'warning';
+  type: ActivityType;
   timestamp: string;
 }
 
-// Queue state
-export interface QueueState {
-  emails: Email[];
-  activityLog: ActivityEntry[];
-  isProcessing: boolean;
-  isPaused: boolean;
-  currentProcessingId: string | null;
-  simulationMode: SimulationMode;
-  retryLimit: number;
-  processingSpeed: ProcessingSpeed;
-  emailCounter: number;
-  activityCounter: number;
+export interface DispatcherState {
+  running: boolean;
+  paused: boolean;
 }
 
-// Statistics
+export interface SmtpSettings {
+  host: string;
+  port: number;
+  secure: boolean;
+  user: string;
+  pass: string;
+  fromName: string;
+  fromEmail: string;
+}
+
+export interface ServerConfig {
+  smtp: SmtpSettings;
+  hasPassword: boolean;
+  smtpConfigured: boolean;
+  dryRun: boolean;
+  retryLimit: number;
+  retryDelayMs: number;
+  interEmailDelayMs: number;
+}
+
+// Live stats from the server
 export interface Stats {
   total: number;
-  pending: number;
-  processing: number;
+  queued: number;
+  sending: number;
   delivered: number;
   failed: number;
   retrying: number;
@@ -67,10 +84,15 @@ export interface Stats {
   failureRate: number;
 }
 
-// Form data
 export interface EmailFormData {
   recipient: string;
   subject: string;
   message: string;
   senderName: string;
+}
+
+export interface ApiResult<T = unknown> {
+  success: boolean;
+  error?: string;
+  data?: T;
 }

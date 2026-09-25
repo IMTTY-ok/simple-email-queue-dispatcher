@@ -5,16 +5,19 @@ import { QueueItem } from './QueueItem';
 interface QueuePanelProps {
   emails: Email[];
   currentProcessingId: string | null;
+  onRemove?: (id: string) => void;
 }
 
-export function QueuePanel({ emails, currentProcessingId }: QueuePanelProps) {
-  const pendingCount = emails.filter((e) => e.status === 'PENDING').length;
+const ACTIVE_STATUSES = ['QUEUED', 'SENDING', 'RETRYING'];
+
+export function QueuePanel({ emails, currentProcessingId, onRemove }: QueuePanelProps) {
+  const activeCount = emails.filter((e) => ACTIVE_STATUSES.includes(e.status)).length;
 
   // Build positions only for queued/active
   const positionMap: Record<string, number> = {};
   let pos = 1;
   for (const e of emails) {
-    if (e.status === 'PENDING' || e.status === 'PROCESSING' || e.status === 'RETRYING') {
+    if (ACTIVE_STATUSES.includes(e.status)) {
       positionMap[e.id] = pos++;
     }
   }
@@ -43,7 +46,7 @@ export function QueuePanel({ emails, currentProcessingId }: QueuePanelProps) {
               color: '#93c5fd',
             }}
           >
-            {pendingCount} pending
+            {activeCount} pending
           </span>
         </div>
       </div>
@@ -76,6 +79,7 @@ export function QueuePanel({ emails, currentProcessingId }: QueuePanelProps) {
                     email={email}
                     position={positionMap[email.id] ?? idx + 1}
                     isActive={email.id === currentProcessingId}
+                    onRemove={onRemove}
                   />
                   {idx < emails.length - 1 && (
                     <div className="flex justify-center my-1">

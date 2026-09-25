@@ -1,4 +1,4 @@
-import { RefreshCw, CheckCircle, XCircle, Clock, Zap } from 'lucide-react';
+import { RefreshCw, CheckCircle, XCircle, Clock, Zap, Trash2 } from 'lucide-react';
 import type { Email, EmailStatus } from '../types/email';
 import { formatTime } from '../utils/queue';
 
@@ -6,6 +6,7 @@ interface QueueItemProps {
   email: Email;
   position: number;
   isActive: boolean;
+  onRemove?: (id: string) => void;
 }
 
 const STATUS_CONFIG: Record<EmailStatus, {
@@ -16,16 +17,16 @@ const STATUS_CONFIG: Record<EmailStatus, {
   border: string;
   text: string;
 }> = {
-  PENDING: {
-    label: 'PENDING',
+  QUEUED: {
+    label: 'QUEUED',
     icon: <Clock className="w-3 h-3" />,
     gradient: 'linear-gradient(135deg, #475569, #64748b)',
     bg: 'rgba(71,85,105,0.12)',
     border: 'rgba(100,116,139,0.25)',
     text: '#94a3b8',
   },
-  PROCESSING: {
-    label: 'PROCESSING',
+  SENDING: {
+    label: 'SENDING',
     icon: <Zap className="w-3 h-3" />,
     gradient: 'linear-gradient(135deg, #2563eb, #4f46e5)',
     bg: 'rgba(37,99,235,0.14)',
@@ -71,8 +72,9 @@ function StatusBadge({ status }: { status: EmailStatus }) {
   );
 }
 
-export function QueueItem({ email, position, isActive }: QueueItemProps) {
+export function QueueItem({ email, position, isActive, onRemove }: QueueItemProps) {
   const cfg = STATUS_CONFIG[email.status];
+  const canRemove = Boolean(onRemove && email.status === 'QUEUED');
 
   return (
     <div
@@ -115,21 +117,36 @@ export function QueueItem({ email, position, isActive }: QueueItemProps) {
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-mono font-bold text-xs text-gray-200 tracking-wide">{email.id}</span>
               {isActive && (
-                <span className="text-xs font-semibold animate-pulse"
-                  style={{ color: '#60a5fa' }}
-                >
-                  ← ACTIVE
+                <span className="text-xs font-semibold animate-pulse" style={{ color: '#60a5fa' }}>
+                  ← LIVE
                 </span>
               )}
             </div>
             <p className="text-xs text-gray-500 truncate mt-0.5">{email.recipient}</p>
             <p className="text-xs mt-0.5 truncate" style={{ color: '#475569' }}>{email.subject}</p>
+            {email.status === 'FAILED' && email.socketErr && (
+              <p className="text-xs mt-0.5 truncate" style={{ color: '#7f1d1d' }} title={email.socketErr}>
+                {email.socketErr}
+              </p>
+            )}
           </div>
         </div>
 
         {/* Right: badges */}
         <div className="shrink-0 flex flex-col items-end gap-1">
-          <StatusBadge status={email.status} />
+          <div className="flex items-center gap-1.5">
+            <StatusBadge status={email.status} />
+            {canRemove && onRemove && (
+              <button
+                onClick={() => onRemove(email.id)}
+                className="p-1 rounded-md transition-colors hover:bg-white/10"
+                style={{ color: '#4b5563' }}
+                title="Remove from queue"
+              >
+                <Trash2 className="w-3 h-3" />
+              </button>
+            )}
+          </div>
           {email.retries > 0 && (
             <span className="text-xs flex items-center gap-1" style={{ color: '#fbbf24' }}>
               <RefreshCw className="w-3 h-3" />
@@ -148,7 +165,7 @@ export function QueueItem({ email, position, isActive }: QueueItemProps) {
               className={`text-xs px-1.5 py-0.5 rounded font-mono font-medium ${
                 log.result === 'SUCCESS' ? 'attempt-badge-success' : 'attempt-badge-fail'
               }`}
-              title={`Attempt ${log.attempt} at ${formatTime(log.timestamp)}`}
+              title={`Attempt ${log.attempt}: ${log.result}${log.detail ? ` — ${log.detail}` : ''} (${formatTime(log.timestamp)})`}
             >
               A{log.attempt} {log.result === 'SUCCESS' ? '✓' : '✗'}
             </span>

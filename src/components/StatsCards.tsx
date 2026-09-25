@@ -127,13 +127,13 @@ export function StatsCards({ stats }: StatsCardsProps) {
         </div>
         <div className="animate-fade-up">
           <StatCard
-            label="Pending"
-            value={stats.pending}
+            label="Queued"
+            value={stats.queued}
             icon={<Clock className="w-4 h-4 text-white" />}
             gradient="linear-gradient(135deg, #64748b, #94a3b8)"
             glow="#64748b"
             borderColor="rgba(100,116,139,0.2)"
-            sub="in queue"
+            sub="waiting in queue"
           />
         </div>
       </div>
