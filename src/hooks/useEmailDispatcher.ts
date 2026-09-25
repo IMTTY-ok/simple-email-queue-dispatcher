@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { apiUrl } from '../api/client';
 import type {
   ActivityEntry,
   DispatcherState,
@@ -51,7 +52,7 @@ async function api<T = unknown>(path: string, options: RequestInit = {}): Promis
     ...options,
     headers: options.body ? { 'Content-Type': 'application/json', ...options.headers } : options.headers,
   };
-  const res = await fetch(path, init);
+  const res = await fetch(apiUrl(path), init);
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     throw new Error((data as { error?: string }).error || `Request failed (${res.status})`);
@@ -78,7 +79,7 @@ export function useEmailDispatcher() {
 
   // Subscribe to live server events
   useEffect(() => {
-    const es = new EventSource('/api/events');
+    const es = new EventSource(apiUrl('/api/events'));
     let closed = false;
 
     const markConnected = () => {
