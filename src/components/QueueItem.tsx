@@ -142,6 +142,7 @@ export function QueueItem({ email, position, isActive, onRemove }: QueueItemProp
                 className="p-1 rounded-md transition-colors hover:bg-white/10"
                 style={{ color: '#4b5563' }}
                 title="Remove from queue"
+                aria-label={`Remove ${email.id} from queue`}
               >
                 <Trash2 className="w-3 h-3" />
               </button>

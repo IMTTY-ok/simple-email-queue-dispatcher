@@ -9,12 +9,13 @@ interface StatsCardsProps {
 /** Smoothly animates a number from its previous value to the new value */
 function useAnimatedValue(value: number, duration = 400) {
   const [display, setDisplay] = useState(value);
-  const prev = useRef(value);
+  const current = useRef(value);
   const raf = useRef<number | null>(null);
 
   useEffect(() => {
-    if (prev.current === value) return;
-    const start = prev.current;
+    if (current.current === value) return;
+    // start from the number actually on screen, not a stale animation start
+    const start = current.current;
     const end = value;
     const startTime = performance.now();
 
@@ -23,9 +24,11 @@ function useAnimatedValue(value: number, duration = 400) {
       const t = Math.min(elapsed / duration, 1);
       // ease-out cubic
       const eased = 1 - Math.pow(1 - t, 3);
-      setDisplay(Math.round(start + (end - start) * eased));
+      const next = Math.round(start + (end - start) * eased);
+      current.current = next;
+      setDisplay(next);
       if (t < 1) raf.current = requestAnimationFrame(tick);
-      else { prev.current = end; }
+      else current.current = end;
     };
 
     raf.current = requestAnimationFrame(tick);

@@ -1,0 +1,13 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "emails",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASC" },
+        { "fieldPath": "seq", "order": "ASC" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

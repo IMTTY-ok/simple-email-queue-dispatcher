@@ -1,0 +1,17 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Dashboard data is read from the browser in realtime (Firebase SDK).
+    // All writes happen server-side through the HTTPS Cloud Function (Admin SDK),
+    // so direct client writes are always denied.
+    match /emails/{id}   { allow read: if true; allow write: if false; }
+    match /activity/{id} { allow read: if true; allow write: if false; }
+    match /stats/{id}    { allow read: if true; allow write: if false; }
+    match /_meta/{id}    { allow read: if true; allow write: if false; }
+    match /_config/{id}  { allow read: if true; allow write: if false; }
+
+    // Server-only secret storage (e.g. SMTP password set from the dashboard).
+    // Never readable/writable by browser clients, regardless of any other rule.
+    match /_secrets/{id} { allow read, write: if false; }
+  }
+}

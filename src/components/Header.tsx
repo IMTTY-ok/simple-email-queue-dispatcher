@@ -46,7 +46,7 @@ export function Header({ isProcessing, isPaused, connected, onStart, onPause, on
               border: connected ? '1px solid rgba(52,211,153,0.25)' : '1px solid rgba(248,113,113,0.25)',
               background: connected ? 'rgba(5,46,22,0.35)' : 'rgba(69,10,10,0.35)',
             }}
-            title={connected ? 'Connected to dispatcher server' : 'Dispatcher server unreachable'}
+            title={connected ? 'Connected to Firebase backend' : 'Dispatcher data source unreachable'}
           >
             <span className={`w-1.5 h-1.5 rounded-full ${connected ? 'bg-emerald-400' : 'bg-red-400'} animate-pulse-dot`} />
             <span className="text-xs font-medium" style={{ color: connected ? '#6ee7b7' : '#fca5a5' }}>
@@ -85,6 +85,7 @@ export function Header({ isProcessing, isPaused, connected, onStart, onPause, on
                 className="btn flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-white text-sm font-semibold"
                 style={{ background: 'linear-gradient(135deg, #2563eb, #4f46e5)' }}
                 title={isPaused ? 'Resume Processing' : 'Start Processing'}
+                aria-label={isPaused ? 'Resume processing' : 'Start processing'}
               >
                 <Play className="w-3.5 h-3.5" fill="currentColor" />
                 <span className="hidden sm:inline">{isPaused ? 'Resume' : 'Start'}</span>
@@ -95,6 +96,7 @@ export function Header({ isProcessing, isPaused, connected, onStart, onPause, on
                 className="btn flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-white text-sm font-semibold"
                 style={{ background: 'linear-gradient(135deg, #d97706, #b45309)' }}
                 title="Pause Processing"
+                aria-label="Pause processing"
               >
                 <Pause className="w-3.5 h-3.5" fill="currentColor" />
                 <span className="hidden sm:inline">Pause</span>
@@ -105,6 +107,7 @@ export function Header({ isProcessing, isPaused, connected, onStart, onPause, on
               className="btn flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-gray-300 text-sm font-medium border border-white/[0.08]"
               style={{ background: 'rgba(255,255,255,0.05)' }}
               title="Reset All"
+              aria-label="Reset all data"
             >
               <RotateCcw className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Reset</span>
