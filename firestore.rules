@@ -7,11 +7,18 @@ service cloud.firestore {
     match /emails/{id}   { allow read: if true; allow write: if false; }
     match /activity/{id} { allow read: if true; allow write: if false; }
     match /stats/{id}    { allow read: if true; allow write: if false; }
-    match /_meta/{id}    { allow read: if true; allow write: if false; }
     match /_config/{id}  { allow read: if true; allow write: if false; }
+
+    // Only the dispatcher state itself is browser-readable. The dispatch
+    // lease and the sequence counters are internal bookkeeping.
+    match /_meta/main { allow read: if true; allow write: if false; }
+    match /_meta/{id} { allow read: if false; allow write: if false; }
 
     // Server-only secret storage (e.g. SMTP password set from the dashboard).
     // Never readable/writable by browser clients, regardless of any other rule.
     match /_secrets/{id} { allow read, write: if false; }
+
+    // Anything not matched above is denied.
+    match /{document=**} { allow read, write: if false; }
   }
 }

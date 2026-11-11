@@ -248,7 +248,7 @@ export function SettingsPanel({
             <button
               type="button"
               onClick={() => setShowPass((s) => !s)}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-400"
+              className="absolute right-1 top-1/2 -translate-y-1/2 p-2 rounded-lg text-gray-600 hover:text-gray-400 hover:bg-white/5 transition-colors"
               aria-label={showPass ? 'Hide password' : 'Show password'}
             >
               {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -303,7 +303,7 @@ export function SettingsPanel({
           <input type="checkbox" checked={dryRun}
             onChange={(e) => { setDryRun(e.target.checked); clear(); }}
             aria-label="Enable dry-run mode"
-            className="w-4 h-4 shrink-0 accent-amber-500" />
+            className="w-6 h-6 shrink-0 accent-amber-500" />
         </label>
 
         {/* Simulation modes — only meaningful in dry-run */}

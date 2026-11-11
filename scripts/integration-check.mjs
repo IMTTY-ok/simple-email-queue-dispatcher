@@ -20,6 +20,9 @@ const API_BASE =
   process.env.API_BASE ||
   'http://127.0.0.1:5001/email-dispatcher-43118/us-central1/backend';
 
+/** The browser origin the dashboard sends; must be in the function allowlist. */
+const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
+
 let passed = 0;
 let failed = 0;
 
@@ -38,12 +41,22 @@ function check(condition, description, detail = '') {
   }
 }
 
-/** Perform a request and never throw — failures are reported, not fatal. */
+/**
+ * Perform a request and never throw — failures are reported, not fatal.
+ *
+ * Mutating requests carry an allowed `Origin` header, exactly like the
+ * dashboard does. The function rejects state-changing requests from an
+ * unknown origin.
+ */
 async function request(method, path, payload) {
+  const mutating = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
   try {
     const res = await fetch(`${API_BASE}${path}`, {
       method,
-      headers: payload ? { 'Content-Type': 'application/json' } : undefined,
+      headers: {
+        ...(payload ? { 'Content-Type': 'application/json' } : {}),
+        ...(mutating ? { Origin: CLIENT_ORIGIN } : {}),
+      },
       body: payload ? JSON.stringify(payload) : undefined,
     });
     const text = await res.text();
@@ -213,6 +226,28 @@ async function main() {
   check(resume.ok, 'resume returns 200', `status=${resume.status}`);
   const afterResume = await get('/api/stats');
   check(afterResume.body?.total === 4, 'all four emails were processed after resume', `total=${afterResume.body?.total}`);
+
+  // ── security: origin enforcement ────────────────────────────────────────────
+  head('Security - origin enforcement on mutating endpoints');
+
+  // Raw fetch — the helper above always attaches an Origin header.
+  const noOrigin = await fetch(`${API_BASE}/api/emails`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ recipient: 'nope@example.com', subject: 'S', message: 'M' }),
+  });
+  check(!noOrigin.ok, 'a state change without an Origin header is refused', `status=${noOrigin.status}`);
+  check(noOrigin.status === 403, 'the refusal is a 403', `status=${noOrigin.status}`);
+
+  const badOrigin = await fetch(`${API_BASE}/api/emails`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Origin: 'https://evil.example.com' },
+    body: JSON.stringify({ recipient: 'nope@example.com', subject: 'S', message: 'M' }),
+  });
+  check(!badOrigin.ok, 'a state change from an unknown origin is refused', `status=${badOrigin.status}`);
+
+  const readOnly = await fetch(`${API_BASE}/api/health`);
+  check(readOnly.ok, 'reads still work without an Origin header', `status=${readOnly.status}`);
 
   // ── Module 1 - removal ──────────────────────────────────────────────────────
   head('Module 1 - Email Queue Creator (removal)');

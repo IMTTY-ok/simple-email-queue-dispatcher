@@ -41,7 +41,7 @@ export default function App() {
     reset,
   } = useEmailDispatcher();
 
-  const [startError, setStartError] = useState<string | null>(null);
+  const [dispatchError, setdispatchError] = useState<string | null>(null);
 
   const { stats, emails, activityLog, dispatcher, config, connected } = state;
   const isProcessing = dispatcher.running && !dispatcher.paused;
@@ -50,23 +50,31 @@ export default function App() {
   const simulationMode = config?.simulationMode ?? 'AUTOMATIC';
 
   const handleStart = useCallback(async () => {
-    setStartError(null);
+    setdispatchError(null);
     const result = isPaused ? await resume() : await start();
     if (!result.success && result.error) {
-      setStartError(result.error);
-      setTimeout(() => setStartError(null), 5000);
+      setdispatchError(result.error);
+      setTimeout(() => setdispatchError(null), 5000);
     }
   }, [isPaused, resume, start]);
 
   const handlePause = useCallback(async () => {
-    await pause();
+    const result = await pause();
+    if (!result.success && result.error) {
+      setdispatchError(result.error);
+      setTimeout(() => setdispatchError(null), 5000);
+    }
   }, [pause]);
 
   const handleReset = useCallback(async () => {
     if (dispatcher.running && !dispatcher.paused) {
       if (!window.confirm('Dispatch is currently live.\nAre you sure you want to reset?')) return;
     }
-    await reset();
+    const result = await reset();
+    if (!result.success && result.error) {
+      setdispatchError(result.error);
+      setTimeout(() => setdispatchError(null), 5000);
+    }
   }, [dispatcher.running, dispatcher.paused, reset]);
 
   return (
@@ -111,7 +119,7 @@ export default function App() {
         )}
 
         {/* Error banner */}
-        {startError && (
+        {dispatchError && (
           <div
             className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium animate-fade-up"
             style={{
@@ -122,7 +130,7 @@ export default function App() {
             role="alert"
           >
             <AlertTriangle className="w-4 h-4 shrink-0" style={{ color: '#fbbf24' }} />
-            {startError}
+            {dispatchError}
           </div>
         )}
 
@@ -154,7 +162,9 @@ export default function App() {
         <StatsCards stats={stats} />
 
         {/* Module 1 — Email Queue Creator + Module 3 — Retry Logic Engine */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4" style={{ minHeight: '420px' }}>
+        {/* The row has a bounded height, like the activity log below, so a long
+            queue scrolls inside its panel instead of stretching the page. */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 grid-rows-[minmax(420px,640px)]">
           <QueuePanel
             emails={emails}
             currentProcessingId={currentEmail?.id ?? null}

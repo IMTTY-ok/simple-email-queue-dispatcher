@@ -77,7 +77,7 @@ export function QueuePanel({ emails, currentProcessingId, onRemove }: QueuePanel
                 <div key={email.id}>
                   <QueueItem
                     email={email}
-                    position={positionMap[email.id] ?? idx + 1}
+                    position={positionMap[email.id] ?? null}
                     isActive={email.id === currentProcessingId}
                     onRemove={onRemove}
                   />
