@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { collection, doc, onSnapshot, orderBy, limit, query } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 import { apiUrl } from '../api/client';
 import type {
   ActivityEntry,
@@ -10,10 +12,13 @@ import type {
 } from '../types/email';
 
 /**
- * Real dispatcher client:
- *  - reads the full dashboard state from the Express server (REST)
- *  - subscribes to live updates over Server-Sent Events
- *  - exposes actions that drive the server-side queue + SMTP sender
+ * Firebase-backed client:
+ *  - live state streams in from Firestore realtime listeners (emails, activity,
+ *    stats, _meta, _config) instead of SSE
+ *  - every action (enqueue, dispatch, config…) goes through the HTTPS Cloud
+ *    Function, which is the only writer the Firestore rules allow
+ *  - the queue is drained by "dispatch passes"; when a pass reports more work
+ *    remaining, this hook keeps it alive by re-triggering /api/dispatch/continue
  */
 
 export const INITIAL_STATS: Stats = {
@@ -65,97 +70,182 @@ function errMessage(err: unknown): string {
   return String(err);
 }
 
-function upsertEmail(list: Email[], incoming: Email): Email[] {
-  const idx = list.findIndex((e) => e.id === incoming.id);
-  if (idx === -1) return [...list, incoming];
-  const next = [...list];
-  next[idx] = incoming;
-  return next;
+function statsFromDoc(d: Record<string, unknown>): Stats {
+  const delivered = Number(d.delivered) || 0;
+  const failed = Number(d.failed) || 0;
+  const processed = delivered + failed;
+  const retrying = Number(d.retrying) || 0;
+  return {
+    total: Number(d.total) || 0,
+    queued: Number(d.queued) || 0,
+    sending: (Number(d.sending) || 0) + retrying,
+    delivered,
+    failed,
+    retrying,
+    totalAttempts: Number(d.totalAttempts) || 0,
+    totalRetries: Number(d.totalRetries) || 0,
+    successRate: processed > 0 ? Math.round((delivered / processed) * 100) : 0,
+    failureRate: processed > 0 ? Math.round((failed / processed) * 100) : 0,
+  };
+}
+
+function configFromDoc(data: Record<string, unknown>): ServerConfig | null {
+  if (!data || Object.keys(data).length === 0) return null;
+  const smtp = (data.smtp && typeof data.smtp === 'object' ? data.smtp : {}) as Record<string, unknown>;
+  const host = String(smtp.host ?? '');
+  const user = String(smtp.user ?? '');
+  const hasPassword = data.passwordSet === true;
+  return {
+    smtp: {
+      host,
+      port: Number(smtp.port) || 587,
+      secure: smtp.secure === true,
+      user,
+      pass: '',
+      fromName: String(smtp.fromName ?? 'Email Dispatcher'),
+      fromEmail: String(smtp.fromEmail ?? ''),
+    },
+    hasPassword,
+    smtpConfigured: data.dryRun === true ? true : Boolean(host && user && hasPassword),
+    dryRun: data.dryRun === true,
+    retryLimit: Number(data.retryLimit) || 3,
+    retryDelayMs: Number(data.retryDelayMs) || 3000,
+    interEmailDelayMs: Number(data.interEmailDelayMs) || 1200,
+  };
+}
+
+function toEmail(data: Record<string, unknown>): Email {
+  const email = data as unknown as Email;
+  // defensive: partial/legacy docs must not crash the queue render
+  return {
+    ...email,
+    logs: Array.isArray(email.logs) ? email.logs : [],
+  };
+}
+
+function toActivity(data: Record<string, unknown>): ActivityEntry {
+  return data as unknown as ActivityEntry;
 }
 
 export function useEmailDispatcher() {
   const [state, setState] = useState<UiState>(DEFAULT_STATE);
   const connectedRef = useRef(false);
+  const metaRef = useRef<DispatcherState>({ running: false, paused: false });
+  const pumpTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Subscribe to live server events
-  useEffect(() => {
-    const es = new EventSource(apiUrl('/api/events'));
-    let closed = false;
+  const markConnected = useCallback(() => {
+    if (!connectedRef.current) {
+      connectedRef.current = true;
+      setState((p) => (p.connected ? p : { ...p, connected: true }));
+    }
+  }, []);
 
-    const markConnected = () => {
-      if (!closed) {
-        connectedRef.current = true;
-        setState((p) => (p.connected ? p : { ...p, connected: true }));
+  const markOffline = useCallback(() => {
+    connectedRef.current = false;
+    setState((p) => (p.connected ? { ...p, connected: false } : p));
+  }, []);
+
+  const cancelPump = useCallback(() => {
+    if (pumpTimerRef.current) {
+      clearTimeout(pumpTimerRef.current);
+      pumpTimerRef.current = null;
+    }
+  }, []);
+
+  const schedulePump = useCallback((remaining: number) => {
+    if (pumpTimerRef.current || remaining <= 0) return;
+    pumpTimerRef.current = setTimeout(async () => {
+      pumpTimerRef.current = null;
+      if (!metaRef.current.running || metaRef.current.paused) return;
+      try {
+        const r = await api<{ ok: boolean; done: boolean; remaining: number }>('/api/dispatch/continue', {
+          method: 'POST',
+        });
+        if (r.done === false && r.remaining > 0) schedulePump(r.remaining);
+      } catch {
+        // backend cold start or transient network blip — retry once
+        if (metaRef.current.running && !metaRef.current.paused) schedulePump(1);
       }
-    };
+    }, 1800);
+  }, []);
 
-    es.addEventListener('snapshot', (ev) => {
-      if (closed) return;
-      markConnected();
-      const snap = JSON.parse((ev as MessageEvent).data);
-      setState((p) => ({
-        ...p,
-        connected: true,
-        emails: Array.isArray(snap.emails) ? snap.emails : p.emails,
-        activityLog: Array.isArray(snap.activity) ? snap.activity : p.activityLog,
-        stats: snap.stats ?? p.stats,
-        dispatcher: snap.dispatcher ?? p.dispatcher,
-        config: snap.config ?? p.config,
-      }));
-    });
+  // ── Firestore live subscriptions ───────────────────────────────────────────
+  useEffect(() => {
+    const emailUnsub = onSnapshot(
+      query(collection(db, 'emails'), orderBy('seq', 'asc')),
+      (snap) => {
+        markConnected();
+        setState((p) => ({ ...p, connected: true, emails: snap.docs.map((d) => toEmail(d.data())) }));
+      },
+      markOffline
+    );
 
-    es.addEventListener('email', (ev) => {
-      if (closed) return;
-      markConnected();
-      const email = JSON.parse((ev as MessageEvent).data) as Email;
-      setState((p) => ({ ...p, connected: true, emails: upsertEmail(p.emails, email) }));
-    });
+    const activityUnsub = onSnapshot(
+      query(collection(db, 'activity'), orderBy('seq', 'desc'), limit(250)),
+      (snap) => {
+        setState((p) => ({ ...p, activityLog: snap.docs.map((d) => toActivity(d.data())) }));
+      },
+      markOffline
+    );
 
-    es.addEventListener('email:clear', () => {
-      if (closed) return;
-      setState((p) => ({ ...p, emails: [] }));
-    });
+    const statsUnsub = onSnapshot(
+      doc(db, 'stats', 'main'),
+      (snap) => {
+        markConnected();
+        if (snap.exists()) {
+          setState((p) => ({ ...p, connected: true, stats: statsFromDoc(snap.data() as Record<string, unknown>) }));
+        }
+      },
+      markOffline
+    );
 
-    es.addEventListener('activity', (ev) => {
-      if (closed) return;
-      markConnected();
-      const entry = JSON.parse((ev as MessageEvent).data) as ActivityEntry;
-      setState((p) => ({ ...p, connected: true, activityLog: [entry, ...p.activityLog].slice(0, 250) }));
-    });
+    const metaUnsub = onSnapshot(
+      doc(db, '_meta', 'main'),
+      (snap) => {
+        markConnected();
+        if (snap.exists()) {
+          const dispatch = (snap.data() as Record<string, unknown>).dispatch as DispatcherState | undefined;
+          if (dispatch) {
+            metaRef.current = dispatch;
+            setState((p) => ({ ...p, connected: true, dispatcher: dispatch }));
+            if (!dispatch.running || dispatch.paused) cancelPump();
+          }
+        } else {
+          metaRef.current = { running: false, paused: false };
+          setState((p) => ({ ...p, connected: true, dispatcher: { running: false, paused: false } }));
+        }
+      },
+      markOffline
+    );
 
-    es.addEventListener('stats', (ev) => {
-      if (closed) return;
-      markConnected();
-      const stats = JSON.parse((ev as MessageEvent).data) as Stats;
-      setState((p) => ({ ...p, connected: true, stats }));
-    });
+    const configUnsub = onSnapshot(
+      doc(db, '_config', 'main'),
+      (snap) => {
+        markConnected();
+        const config = snap.exists()
+          ? configFromDoc(snap.data() as Record<string, unknown>)
+          : null;
+        setState((p) => ({ ...p, connected: true, config }));
+      },
+      markOffline
+    );
 
-    es.addEventListener('dispatcher', (ev) => {
-      if (closed) return;
-      markConnected();
-      const d = JSON.parse((ev as MessageEvent).data) as DispatcherState;
-      setState((p) => ({ ...p, connected: true, dispatcher: d }));
-    });
-
-    es.addEventListener('config', (ev) => {
-      if (closed) return;
-      markConnected();
-      const config = JSON.parse((ev as MessageEvent).data) as ServerConfig;
-      setState((p) => ({ ...p, connected: true, config }));
-    });
-
-    // fired when the connection drops / the server restarts
-    es.addEventListener('error', () => {
-      if (closed) return;
-      connectedRef.current = false;
-      setState((p) => ({ ...p, connected: false }));
-    });
+    // one-time authoritative config fetch (seeds _config + refreshes password flag)
+    api<ServerConfig>('/api/config')
+      .then((config) => setState((p) => ({ ...p, connected: true, config })))
+      .catch(() => {
+        // Firestore listener already keeps config fresh; ignore cold-start races
+      });
 
     return () => {
-      closed = true;
-      es.close();
+      cancelPump();
+      emailUnsub();
+      activityUnsub();
+      statsUnsub();
+      metaUnsub();
+      configUnsub();
     };
-  }, []);
+  }, [cancelPump, markConnected, markOffline]);
 
   // ── actions ────────────────────────────────────────────────────────────────
 
@@ -192,39 +282,47 @@ export function useEmailDispatcher() {
 
   const start = useCallback(async () => {
     try {
-      await api('/api/dispatch/start', { method: 'POST' });
+      const data = await api<{ ok: boolean; done: boolean; remaining: number }>('/api/dispatch/start', {
+        method: 'POST',
+      });
+      if (data.done === false && data.remaining > 0) schedulePump(data.remaining);
       return { success: true };
     } catch (err) {
       return { success: false, error: errMessage(err) };
     }
-  }, []);
+  }, [schedulePump]);
 
   const pause = useCallback(async () => {
     try {
       await api('/api/dispatch/pause', { method: 'POST' });
+      cancelPump();
       return { success: true };
     } catch (err) {
       return { success: false, error: errMessage(err) };
     }
-  }, []);
+  }, [cancelPump]);
 
   const resume = useCallback(async () => {
     try {
-      await api('/api/dispatch/resume', { method: 'POST' });
+      const data = await api<{ ok: boolean; done: boolean; remaining: number }>('/api/dispatch/resume', {
+        method: 'POST',
+      });
+      if (data.done === false && data.remaining > 0) schedulePump(data.remaining);
       return { success: true };
     } catch (err) {
       return { success: false, error: errMessage(err) };
     }
-  }, []);
+  }, [schedulePump]);
 
   const reset = useCallback(async () => {
     try {
       await api('/api/dispatch/reset', { method: 'POST' });
+      cancelPump();
       return { success: true };
     } catch (err) {
       return { success: false, error: errMessage(err) };
     }
-  }, []);
+  }, [cancelPump]);
 
   const removeEmail = useCallback(async (id: string) => {
     try {

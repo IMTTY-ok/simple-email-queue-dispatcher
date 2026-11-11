@@ -212,6 +212,7 @@ export function AddEmailForm({ onAdd, disabled }: AddEmailFormProps) {
               border: '1px solid rgba(255,255,255,0.08)',
               color: '#6b7280',
             }}
+            aria-label="Clear form"
           >
             <X className="w-4 h-4" />
           </button>

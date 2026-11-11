@@ -87,8 +87,8 @@ export default function App() {
             }}
           >
             <WifiOff className="w-4 h-4 shrink-0" style={{ color: '#f87171' }} />
-            Dispatcher server unreachable. Run the API first:
-            <code className="px-1.5 py-0.5 rounded bg-black/30 text-xs font-mono">npm run dev:server</code>
+            Dispatcher data source unreachable. Start the Firebase emulators:
+            <code className="px-1.5 py-0.5 rounded bg-black/30 text-xs font-mono">npm run dev</code>
           </div>
         )}
 

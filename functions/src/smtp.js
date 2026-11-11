@@ -1,10 +1,17 @@
-import nodemailer from 'nodemailer';
-import config, { smtpConfigured } from './config.js';
+'use strict';
+
+/**
+ * Gmail SMTP transport via Nodemailer.
+ * Ported from the old Express server — same Gmail SMTP behaviour, dry-run stub,
+ * retry-friendly errors and HTML template.
+ */
+
+const nodemailer = require('nodemailer');
 
 let transport = null;
 let transportSignature = '';
 
-function signature() {
+function signature(config) {
   if (config.dryRun) return 'dry-run';
   return `${config.smtp.host}:${config.smtp.port}:${config.smtp.user}`;
 }
@@ -30,9 +37,8 @@ function makeDryRunner() {
   };
 }
 
-/** Get (or lazily create) the transport matching the current config. */
-export function getTransport() {
-  const sig = signature();
+function getTransport(config) {
+  const sig = signature(config);
   if (transport && transportSignature === sig) return transport;
 
   if (config.dryRun) {
@@ -43,14 +49,17 @@ export function getTransport() {
       port: config.smtp.port,
       secure: config.smtp.secure,
       auth: config.smtp.pass ? { user: config.smtp.user, pass: config.smtp.pass } : undefined,
+      // bound each attempt so one hung socket can't consume the whole pass budget
+      connectionTimeout: 30000,
+      greetingTimeout: 20000,
+      socketTimeout: 60000,
     });
   }
   transportSignature = sig;
   return transport;
 }
 
-/** Drop the cached transport so a new config takes effect immediately. */
-export function resetTransport() {
+function resetTransport() {
   if (transport) {
     try {
       if (typeof transport.close === 'function') transport.close();
@@ -62,16 +71,13 @@ export function resetTransport() {
   transportSignature = '';
 }
 
-/**
- * Verify the SMTP connection works (auth + server reachable).
- */
-export async function verifyConnection() {
-  if (!smtpConfigured()) {
-    if (config.dryRun) return { ok: true, mode: 'dry-run', note: 'Dry-run mode — no SMTP used' };
+async function verifyConnection(config) {
+  if (config.dryRun) return { ok: true, mode: 'dry-run', note: 'Dry-run mode — no SMTP used' };
+  if (!(config.smtp.host && config.smtp.user && config.smtp.pass)) {
     return { ok: false, error: 'SMTP not configured. Host, user and password are required.' };
   }
   try {
-    const t = getTransport();
+    const t = getTransport(config);
     await t.verify();
     return { ok: true, mode: 'smtp', note: `Connected to ${config.smtp.host}:${config.smtp.port} (${config.smtp.user})` };
   } catch (err) {
@@ -79,12 +85,7 @@ export async function verifyConnection() {
   }
 }
 
-/**
- * Send one real email.
- * Resolves when the SMTP server ACCEPTS the message.
- * Rejects when the server refuses it (bad recipient, auth failure, host down, ...).
- */
-export async function sendSingleMail({ recipient, subject, message, senderName }) {
+async function sendSingleMail(config, { recipient, subject, message, senderName }) {
   const fromAddress = config.smtp.fromEmail || config.smtp.user;
   const fromName = config.smtp.fromName || senderName || 'Email Dispatcher';
 
@@ -96,13 +97,12 @@ export async function sendSingleMail({ recipient, subject, message, senderName }
     html: wrapHtml(subject, message, senderName),
   };
 
-  const transport = getTransport();
-  const info = await transport.sendMail(mail);
+  const t = getTransport(config);
+  const info = await t.sendMail(mail);
   return info;
 }
 
-/** Short, human-friendly version of a Nodemailer/SMTP error. */
-export function humanError(err) {
+function humanError(err) {
   if (!err) return 'Unknown SMTP error';
   let message = err.message || String(err);
   if (err.code) message = `[${err.code}] ${message}`;
@@ -137,7 +137,7 @@ function wrapHtml(subject, message, senderName) {
           </tr>
           <tr>
             <td style="padding:14px 24px;background:#f8fafc;border-top:1px solid #e2e8f0;">
-              <span style="color:#64748b;font-size:12px;">Sent by the Email Queue Dispatcher — real SMTP delivery simulation.</span>
+              <span style="color:#64748b;font-size:12px;">Sent by the Email Queue Dispatcher — Gmail SMTP delivery.</span>
             </td>
           </tr>
         </table>
@@ -155,3 +155,10 @@ function escapeHtml(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 }
+
+module.exports = {
+  verifyConnection,
+  sendSingleMail,
+  resetTransport,
+  humanError,
+};

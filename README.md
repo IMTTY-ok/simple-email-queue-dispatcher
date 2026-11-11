@@ -1,52 +1,43 @@
 # Email Queue Dispatcher
 
-> A **real SMTP email dispatcher** dashboard built with React + TypeScript (frontend) and Express + Nodemailer (backend).
-> Add emails → the server dequeues them **FIFO** → sends them over **real SMTP** → live delivery status is streamed back to the dashboard over **SSE**, with automatic retries on failure.
+> A **real SMTP email dispatcher** dashboard: React + TypeScript (Vite) on the front,
+> Firebase Cloud Functions + Firestore + Nodemailer on the back.
+> Add emails → the dispatcher dequeues them **FIFO** → sends them over **real SMTP** →
+> live delivery status streams back to the dashboard through Firestore realtime listeners,
+> with automatic retries on failure.
 
 ---
 
 ## Live Preview
 
-> Run both servers with one command:
->
-> ```bash
-> npm install
-> npm run dev
-> ```
->
-> Frontend: [http://localhost:5173](http://localhost:5173) · API: [http://localhost:5001/api](http://localhost:5001/api)
+```bash
+npm install            # frontend deps
+npm run dev:setup      # backend deps (functions/)
+npm run dev            # Firebase emulators (functions + firestore) AND the Vite dev server
+```
 
----
+Frontend: [http://localhost:5173](http://localhost:5173)
+Functions emulator: `http://127.0.0.1:5001/email-dispatcher-43118/us-central1/backend`
+Emulator UI: [http://localhost:4000](http://localhost:4000)
 
-## What changed from the simulation version
-
-The first version simulated delivery in the browser (Random / Force-Success / Force-Failure, `PENDING`/`PROCESSING` statuses, localStorage).
-
-This version sends **real emails**:
-
-| Aspect | Simulation version | Real version |
-|--------|-------------------|--------------|
-| Sender | `Math.random()` | **Nodemailer → SMTP** (Gmail/Outlook/Zoho/any) |
-| Queue | in-browser state | **Express server** (in-memory) |
-| Status | `PENDING/PROCESSING` | `QUEUED/SENDING/RETRYING/DELIVERED/FAILED` |
-| Live updates | React state | **SSE** events pushed to the dashboard |
-| Delivery proof | none | SMTP `250 OK` response, `accepted` recipients, `messageId`, hard-bounce/refusal errors |
-| Persistence | localStorage | server memory (config survives via `.env`) |
+The Vite dev server proxies `/api/*` to the Functions emulator, so the dashboard needs
+no environment variables locally.
 
 ---
 
 ## Features
 
 ### Real Email Sending
-- **SMTP via Nodemailer** — works with Gmail (App Password), Outlook, Zoho, college mail servers, or `smtp2go`-style relays
-- **Live dispatch status** — `DELIVERED` when the SMTP server accepts (250), `FAILED` when it refuses (bad recipient, auth error, host down)
-- **Test connection** button + **send a test email** button to validate credentials before dispatching
-- **Dry-run mode** — simulate the full queue/retry demo offline, no email account needed
+- **SMTP via Nodemailer** — works with Gmail (App Password), Outlook, Zoho, college mail servers, relays
+- **Live dispatch status** — `DELIVERED` when the SMTP server accepts (250), `FAILED` when it refuses
+- **Test connection** + **send a test email** buttons to validate credentials before dispatching
+- **Dry-run mode** — simulate the whole queue/retry flow with no SMTP account
 
-### Queue + Retry (real)
-- **FIFO** — emails processed strictly in insertion order (server-side)
-- **Bounded retry** — failed deliveries retried automatically up to a configurable `retryLimit` (1 initial + N retries)
-- **Start / Pause / Resume / Reset** — dispatcher lifecycle driven from the Header (pause is checked between attempts)
+### Queue + Retry
+- **FIFO** — emails processed strictly in insertion order
+- **Bounded retry** — up to a configurable `retryLimit` (1 initial attempt + N retries)
+- **Start / Pause / Resume / Reset** from the header; pause is cooperative and
+  **requeues the in-flight email** so nothing is ever stranded off-queue
 - **Remove queued emails** — trash icon on any `QUEUED` item
 - **Load Demo Data** — one-click load of 5 sample emails
 
@@ -60,10 +51,10 @@ This version sends **real emails**:
 | `FAILED` | SMTP refused the message after all attempts |
 
 ### Dashboard
-- **Animated stat counters** — Total / Delivered / Failed / Queued + Attempt & Retry totals
+- **Animated stat counters** — Total / Delivered / Failed / Queued + attempt & retry totals
 - **Live FIFO queue visualization** — FRONT → REAR, active item highlighted, per-attempt badges
 - **Processing panel** — current email, attempt progress bar, per-attempt SMTP response / error
-- **Activity log** — real-time timestamped events streamed over SSE, color-coded
+- **Activity log** — realtime timestamped events, colour-coded
 - **SMTP settings panel** — host/port/secure/user/pass/from-identity, retry limit, dry-run toggle
 - **Export** — dispatch report (incl. SMTP response + error detail) as CSV or JSON
 
@@ -72,18 +63,32 @@ This version sends **real emails**:
 ## Architecture
 
 ```
-┌────────────────────────────┐        SSE (live events)         ┌────────────────────────────┐
-│   React dashboard (Vite)   │ ◄──────────────────────────────── │   Express + Nodemailer     │
-│   :5173                    │        REST (emails/config/…)    │   :5001/server              │
-│   useEmailDispatcher hook  │ ────────────────────────────────► │   Queue store (FIFO)        │
-└────────────────────────────┘    POST /api/emails, /dispatch   │   Dispatcher loop + retry  │
-                                                                 │   SMTP transport           │
-                                                                 └──────────────┬─────────────┘
-                                                                                │ SMTP (250 OK / 550 etc.)
-                                                                        ┌───────▼─────────┐
-                                                                        │  Mail server     │
-                                                                        └─────────────────┘
+┌────────────────────────────┐   Firestore realtime listeners   ┌──────────────────────────────┐
+│  React dashboard (Vite)    │ ◄─────────────────────────────── │  Firestore                   │
+│  :5173                     │        (emails/activity/         │  emails · activity · stats   │
+│  useEmailDispatcher hook   │         stats/_meta/_config)     │  _meta · _config · _secrets  │
+│                            │                                  └──────────────▲───────────────┘
+│                            │        REST /api/* (JSON)                       │ Admin SDK writes
+│                            │ ───────────────────────────────► ┌──────────────┴───────────────┐
+└────────────────────────────┘                                  │  Cloud Function `backend`    │
+                                                                │  Express router + dispatcher │
+                                                                │  Nodemailer SMTP transport   │
+                                                                └──────────────┬───────────────┘
+                                                                               │ SMTP (250 OK / 550 …)
+                                                                       ┌───────▼─────────┐
+                                                                       │  Mail server    │
+                                                                       └─────────────────┘
 ```
+
+- **Only the Cloud Function writes** to Firestore; `firestore.rules` gives browsers
+  read-only access, and `_secrets/*` (the SMTP password) is denied to browsers entirely.
+- Cloud Functions are ephemeral, so the dispatcher is a **bounded dispatch pass** rather
+  than a long-lived loop. The dashboard keeps a pass alive by calling
+  `POST /api/dispatch/continue` while work remains (the response reports `done` + `remaining`).
+- A **dispatch lease** in `_meta/dispatchLease` guarantees only one invocation dispatches
+  at a time, so two browser tabs can never send the same email twice.
+- Emails left mid-flight by a killed invocation are reclaimed by a stale-lease sweep
+  (`reapStale`) and requeued.
 
 ```
 Email lifecycle:
@@ -92,6 +97,7 @@ Email lifecycle:
      │          │
      │          └── failure ──► RETRYING ──► SENDING ──► … ──► FAILED
      │                             (bounded by retryLimit)
+     ├── pause / stop mid-flight ──► QUEUED   (requeued, attempts preserved)
      └── removed by user → gone
 ```
 
@@ -100,36 +106,47 @@ Email lifecycle:
 ## Getting Started
 
 ### Prerequisites
-- Node.js 18+ and npm
-- An SMTP account. Gmail example: enable 2FA → create an **App Password** (`myaccount.google.com → Security → App passwords`).
+- Node.js 20+ and npm
+- The Firebase CLI (installed as a dev dependency — used via `npm run dev`)
+- An SMTP account for real sending. Gmail example: enable 2FA → create an
+  **App Password** (`myaccount.google.com → Security → App passwords`).
 
 ### Run
 
 ```bash
-# 1. install everything
-npm install                 # frontend deps
-npm --prefix server install # server deps
-
-# 2. (optional) real SMTP via env — or use the dashboard Settings panel instead
-copy server\.env.example server\.env   # then fill in your SMTP credentials
-
-# 3. run both servers
-npm run dev                 # API on 5001 (watch mode) + dashboard on 5173
+npm install          # frontend deps
+npm run dev:setup    # functions/ deps
+npm run dev          # emulators + dashboard together
 ```
-
-> The dashboard's **SMTP Dispatcher Settings** panel can configure SMTP at runtime (no restart needed).
-> No `.env` needed for the demo — just tick **Dry-run** and load demo data.
 
 ### Demo walkthrough
 1. Open [http://localhost:5173](http://localhost:5173)
-2. **Settings** → enable **Dry-run** → **Save Config** → **Load Demo Data**
+2. **Settings** → tick **Dry-run** → **Save Config** → **Load Demo Data**
 3. Click **Start** — watch 5 emails go `QUEUED → SENDING → DELIVERED`
-4. For a failure demo: enter a made-up recipient + a bogus SMTP host, Save, Start → watch retries then `FAILED`
-5. For real email: fill in your SMTP credentials → **Test Connection** → **send a test email** to yourself → Start
+4. Failure demo: point at a bogus SMTP host, Save, Start → watch retries then `FAILED`
+5. Real email: fill in SMTP credentials → **Test Connection** → **send a test email** to yourself → Start
+
+### Scripts
+| Script | Purpose |
+|--------|---------|
+| `npm run dev` | Firebase emulators + Vite dev server (concurrently) |
+| `npm run dev:web` | Vite dev server only |
+| `npm run dev:emulators` | Functions + Firestore emulators only |
+| `npm run dev:setup` | `npm install --prefix functions` |
+| `npm run build` | `tsc -b` + production Vite build |
+| `npm run lint` | oxlint |
+| `npm run preview` | preview the production build |
+
+### Deploying
+1. Build the frontend with the API base set to the deployed function:
+   `VITE_API_URL=https://us-central1-<project>.cloudfunctions.net/backend` (see `.env.example`)
+   — never put SMTP credentials in a `VITE_` variable, they would ship to the browser.
+2. Configure `ALLOWED_ORIGIN` (comma-separated allowlist of frontend origins) for the function.
+3. Deploy the function + rules: `firebase deploy --only functions,firestore`.
 
 ---
 
-## API Reference (server :5001)
+## API Reference (Cloud Function `backend`)
 
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
@@ -137,30 +154,30 @@ npm run dev                 # API on 5001 (watch mode) + dashboard on 5173
 | GET/POST | `/api/config` | read / update SMTP + dispatcher config |
 | POST | `/api/config/test` | verify the SMTP connection |
 | POST | `/api/config/test-send` | send an immediate test email to a recipient |
-| GET | `/api/emails` | all emails with statuses + logs |
-| POST | `/api/emails` | enqueue one email |
-| POST | `/api/emails/batch` | enqueue many emails |
+| GET | `/api/emails` · `/api/emails/:id` | all emails / one email with logs |
+| POST | `/api/emails` · `/api/emails/batch` | enqueue one / many emails |
 | DELETE | `/api/emails/:id` | remove an email from the queue |
 | GET | `/api/activity` · `/api/stats` | activity log / live stats |
-| POST | `/api/dispatch/start·pause·resume·stop·reset` | dispatcher lifecycle |
-| GET | `/api/events` | **SSE** — snapshot + live `email`/`activity`/`stats`/`dispatcher`/`config` events |
+| POST | `/api/dispatch/start·continue·pause·resume·stop·reset` | dispatcher lifecycle |
+
+Live dashboard data is **not** polled — it comes from Firestore `onSnapshot` listeners.
 
 ---
 
 ## Configuration
 
-All values can come from `server/.env` or the dashboard Settings panel:
+Environment defaults for the function (Firestore `_config/main` overrides them at runtime;
+the SMTP password lives in `_secrets/main` and is never returned to the client):
 
 | Key | Default | Meaning |
 |-----|---------|---------|
-| `PORT` | `5001` | API port |
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_SECURE` | — / `587` / `false` | mail server (587 = StartTLS, 465 = SSL) |
 | `SMTP_USER` / `SMTP_PASS` | — | login (Gmail: App Password) |
 | `FROM_NAME` / `FROM_EMAIL` | `Email Dispatcher` | sender identity shown to recipients |
 | `RETRY_LIMIT` | `3` | retries after the initial attempt |
 | `RETRY_DELAY_MS` / `INTER_EMAIL_DELAY_MS` | `3000` / `1200` | backoff / inter-email pacing |
 | `SMTP_DRYRUN` | `false` | simulate delivery without SMTP |
-| `ALLOWED_ORIGIN` | `*` | CORS origin |
+| `ALLOWED_ORIGIN` | built-in dev/Vercel list | comma-separated CORS allowlist |
 
 ---
 
@@ -169,9 +186,11 @@ All values can come from `server/.env` or the dashboard Settings panel:
 ```typescript
 interface Email {
   id: string;              // "EML-001"
+  seq: number;             // monotonic insertion sequence (FIFO order)
   recipient: string;
   subject: string;
   message: string;
+  senderName?: string;
   status: 'QUEUED' | 'SENDING' | 'RETRYING' | 'DELIVERED' | 'FAILED';
   attempts: number;        // SMTP attempts made
   retries: number;         // attempts - 1
@@ -184,6 +203,9 @@ interface Email {
 }
 ```
 
+Firestore layout: `emails`, `activity`, `stats/main`, `_meta/main` (sequence counters +
+dispatcher state), `_config/main` (dashboard-editable config), `_secrets/main` (SMTP password).
+
 ---
 
 ## Project Structure
@@ -195,31 +217,34 @@ email1/
 │   ├── components/
 │   │   ├── Header.tsx              # Start/Pause/Reset + server connection pill
 │   │   ├── SettingsPanel.tsx       # SMTP config, retry limit, dry-run, test send
-│   │   ├── AddEmailForm.tsx        # Real email form (POST /api/emails)
+│   │   ├── AddEmailForm.tsx        # Enqueue form (POST /api/emails)
 │   │   ├── QueuePanel.tsx          # FIFO visualization
 │   │   ├── QueueItem.tsx           # Status badge, attempt badges, remove button
 │   │   ├── ProcessingPanel.tsx     # Live attempt progress + SMTP response
 │   │   ├── StatsCards.tsx          # Animated counters
-│   │   ├── ActivityLog.tsx         # SSE-driven log
+│   │   ├── ActivityLog.tsx         # Realtime log
 │   │   └── ExportPanel.tsx         # Summary + CSV/JSON export
-│   ├── hooks/useEmailDispatcher.ts # REST client + SSE subscription + actions
+│   ├── hooks/useEmailDispatcher.ts # Firestore listeners + REST actions
+│   ├── lib/firebase.ts             # Firebase app + Firestore (emulator in DEV)
+│   ├── api/client.ts               # apiUrl() helper (VITE_API_URL)
 │   ├── utils/ (queue.ts, exportReport.ts)
 │   ├── types/email.ts
 │   └── App.tsx
 │
-├── server/                         # Backend (Node + Express + Nodemailer)
-│   ├── src/
-│   │   ├── index.js                # app bootstrap
-│   │   ├── routes.js               # REST + SSE routes
-│   │   ├── config.js               # env + runtime config (secrets sanitized)
-│   │   ├── transport.js            # Nodemailer SMTP transport + dry-run stub
-│   │   ├── store.js                # in-memory FIFO queue, log, stats
-│   │   ├── dispatcher.js           # async dispatching loop + retry engine
-│   │   └── sse.js                  # Server-Sent Events hub
-│   └── .env.example
+├── functions/                      # Backend (Cloud Functions + Express + Nodemailer)
+│   ├── index.js                    # HTTPS function bootstrap (`backend`) + CORS
+│   └── src/
+│       ├── routes.js               # REST routes (/api/*)
+│       ├── config.js               # env + Firestore config layering (secrets sanitized)
+│       ├── firestore.js            # email/activity/stats/meta store + dispatch lease
+│       ├── dispatch.js             # bounded dispatch pass + retry engine
+│       └── smtp.js                 # Nodemailer transport + dry-run stub
 │
-├── vite.config.ts                  # /api -> localhost:5001 proxy
-└── package.json                    # npm run dev runs BOTH apps (concurrently)
+├── firestore.rules                 # browser read-only; secrets denied
+├── firestore.indexes.json          # composite index for the FIFO query
+├── firebase.json                   # functions + emulator ports
+├── vite.config.ts                  # /api -> Functions emulator proxy
+└── package.json                    # npm run dev runs emulators + dashboard
 ```
 
 ---
@@ -227,22 +252,32 @@ email1/
 ## How the dispatcher works
 
 ```
-take email from front of queue        (FIFO)
-mark SENDING → consumers notified over SSE
+claim dispatch lease                     (only one live pass at a time)
+reap emails stranded by a dead invocation
+PASS BUDGET = 420s
 
-attempt = 1
-WHILE attempt <= retryLimit + 1
-    sendMail() over SMTP
-    IF server accepts (250)  → mark DELIVERED (store smtp.response, messageId) → stop
-    ELSE (refusal / error)   → log attempt FAILURE
-                               IF last attempt → mark FAILED (store socketErr) → stop
-                               ELSE → mark RETRYING, backoff(retryDelayMs), attempt++
-move to the next queued email
+WHILE inside budget:
+    stop if paused / stopped
+    renew lease
+    take the front queued email             (FIFO, by seq)
+    mark SENDING
+    attempt = last used attempt + 1
+    WHILE attempt <= retryLimit + 1
+        sendMail() over SMTP
+        IF accepted (250)  → log SUCCESS → mark DELIVERED → next email
+        ELSE               → log FAILURE
+                             IF last attempt → mark FAILED → next email
+                             ELSE → mark RETRYING → backoff(retryDelayMs)
+        stop if paused → requeue the email → exit pass
+    pace(interEmailDelayMs)
+
+release lease → response { done, remaining }   (dashboard re-triggers /continue if needed)
 ```
 
-- Resolved `sendMail()` → **DELIVERED** (message accepted by the mail server).
-- Thrown `sendMail()` (e.g. `550 recipient rejected`, `ENOTFOUND`, bad auth) → **failure path**, bounded retries, then `FAILED`.
-- Pause is cooperative: the loop checks the pause flag before each attempt and during backoff.
+- A resolved `sendMail()` → **DELIVERED**; a thrown one (550 refusal, `ENOTFOUND`, bad auth)
+  → **failure path** with bounded retries, then **FAILED**.
+- Pause is cooperative: the pass checks the flag before each attempt and during backoff,
+  and puts the in-flight email back to `QUEUED` with its attempt history intact.
 
 ---
 
@@ -252,8 +287,9 @@ move to the next queued email
 - Start with no SMTP configured (and no dry-run) → guarded error from the dispatcher
 - Invalid recipient / subject / message → 400 with a readable message
 - Reset while dispatching → confirmation dialog
-- Multiple dashboards open → all stay in sync via the SSE hub
-- Server crash mid-send → queue is in memory; restart and re-dispatch
+- Multiple dashboards open → both stay in sync; the lease prevents duplicate sends
+- Function killed mid-send → the email is reclaimed and requeued by the stale sweep
+- Pause/resume mid-retry → attempts are preserved, so pausing can't grant extra retries
 - Retry limit clamped 0–10 server-side; never exceeds configured attempts
 
 ---
@@ -262,12 +298,12 @@ move to the next queued email
 
 | Concept | Implementation |
 |---------|---------------|
-| **Queue / FIFO** | `emails[]` server-side, dequeue from front via `nextQueued()` |
+| **Queue / FIFO** | `emails` collection ordered by `seq`, drained from the front |
 | **Retry pattern** | bounded retry loop with configurable limit and backoff |
-| **State machine** | QUEUED → SENDING → (RETRYING) → DELIVERED / FAILED |
-| **Async processing** | non-blocking `async/await` dispatcher; UI stays live |
-| **Live streaming** | SSE server-push to the observer-style dashboard |
-| **Clean separation** | queue store, transport, dispatcher, routes, SSE hub |
+| **State machine** | QUEUED → SENDING → (RETRYING) → DELIVERED / FAILED, counters kept consistent |
+| **Async processing** | bounded async dispatch passes kept alive by the client, with a lease |
+| **Live streaming** | Firestore realtime listeners (no polling, no SSE) |
+| **Clean separation** | store, transport, dispatch engine, routes |
 
 ---
 

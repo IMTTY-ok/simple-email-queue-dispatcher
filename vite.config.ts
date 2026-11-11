@@ -6,9 +6,9 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      // Development proxy → dispatcher API server (server/src/index.js)
+      // Development proxy → Firebase Cloud Functions emulator (functions)
       '/api': {
-        target: 'http://localhost:5001',
+        target: 'http://127.0.0.1:5001/email-dispatcher-43118/us-central1/backend',
         changeOrigin: true,
       },
     },

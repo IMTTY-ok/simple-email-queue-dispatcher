@@ -230,10 +230,15 @@ export function SettingsPanel({
               type="button"
               onClick={() => setShowPass((s) => !s)}
               className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-600 hover:text-gray-400"
+              aria-label={showPass ? 'Hide password' : 'Show password'}
             >
               {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
           </div>
+          <p className="text-[11px] leading-snug" style={{ color: '#374151' }}>
+            Stored server-side in Firebase — never sent back to the browser or committed to the repo.
+            Leave blank to keep the current password.
+          </p>
         </div>
 
         {/* From identity */}
@@ -350,6 +355,7 @@ export function SettingsPanel({
               border: '1px solid rgba(52,211,153,0.3)',
             }}
             title="Send a real test email to verify end-to-end delivery"
+            aria-label="Send test email"
           >
             {busy === 'testsend' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
           </button>

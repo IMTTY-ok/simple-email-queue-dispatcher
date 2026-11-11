@@ -1,5 +1,11 @@
 import type { Email, Stats } from '../types/email';
 
+/** Quote every cell and escape embedded quotes so commas/quotes in data
+ *  (recipients, subjects, SMTP responses) can't break the CSV structure. */
+function csvCell(value: unknown): string {
+  return `"${String(value ?? '').replace(/"/g, '""')}"`;
+}
+
 /**
  * Export all emails as a CSV string (real SMTP dispatch report)
  */
@@ -21,28 +27,28 @@ export function exportCSV(emails: Email[]): string {
   ];
 
   const rows = emails.map((email) => {
-    const logSummary = email.logs
+    const logSummary = (email.logs ?? [])
       .map((l) => `Attempt ${l.attempt}: ${l.result}${l.detail ? ` (${l.detail})` : ''}`)
       .join(' | ');
 
     return [
-      email.id,
-      email.recipient,
-      `"${email.subject.replace(/"/g, '""')}"`,
-      email.senderName || '',
-      email.status,
-      email.attempts,
-      email.retries,
-      email.finalStatus || 'N/A',
-      `"${(email.smtp?.response || '').replace(/"/g, '""')}"`,
-      `"${(email.socketErr || '').replace(/"/g, '""')}"`,
-      email.createdAt,
-      email.updatedAt,
-      `"${logSummary.replace(/"/g, '""')}"`,
+      csvCell(email.id),
+      csvCell(email.recipient),
+      csvCell(email.subject),
+      csvCell(email.senderName || ''),
+      csvCell(email.status),
+      csvCell(email.attempts),
+      csvCell(email.retries),
+      csvCell(email.finalStatus || 'N/A'),
+      csvCell(email.smtp?.response || ''),
+      csvCell(email.socketErr || ''),
+      csvCell(email.createdAt),
+      csvCell(email.updatedAt),
+      csvCell(logSummary),
     ].join(',');
   });
 
-  return [headers.join(','), ...rows].join('\n');
+  return [headers.map(csvCell).join(','), ...rows].join('\n');
 }
 
 /**
