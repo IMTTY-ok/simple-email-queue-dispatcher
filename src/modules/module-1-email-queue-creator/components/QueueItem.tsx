@@ -4,7 +4,8 @@ import { formatTime } from '../../../shared/utils/format';
 
 interface QueueItemProps {
   email: Email;
-  position: number;
+  /** Queue position, or `null` for an email that is no longer pending. */
+  position: number | null;
   isActive: boolean;
   onRemove?: (id: string) => void;
 }
@@ -101,16 +102,19 @@ export function QueueItem({ email, position, isActive, onRemove }: QueueItemProp
       <div className="flex items-start justify-between gap-2 pl-1">
         {/* Left: position + info */}
         <div className="flex items-start gap-2.5 min-w-0">
-          {/* Position circle */}
+          {/* Position circle — only pending emails hold a queue position */}
           <div
             className="shrink-0 w-6 h-6 rounded-lg flex items-center justify-center text-xs font-bold leading-none mt-0.5 transition-all duration-300"
             style={
               isActive
                 ? { background: 'linear-gradient(135deg, #2563eb, #4f46e5)', color: '#fff' }
-                : { background: 'rgba(255,255,255,0.06)', color: '#64748b' }
+                : position !== null
+                  ? { background: 'rgba(255,255,255,0.06)', color: '#64748b' }
+                  : { background: 'transparent', color: '#334155' }
             }
+            title={position !== null ? `Queue position ${position}` : undefined}
           >
-            {position}
+            {position ?? ''}
           </div>
 
           <div className="min-w-0 flex-1">

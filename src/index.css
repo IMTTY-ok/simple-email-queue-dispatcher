@@ -283,3 +283,29 @@ body {
   border: 1px solid rgba(248,113,113,0.3);
   color: #fca5a5;
 }
+
+/* ── Reduced motion ──────────────────────────────────────────────────────── */
+/* Users who ask the OS to reduce motion get a still dashboard: no pulsing
+   dots, no spinning retry icons, no sliding log entries. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .animate-pulse-dot,
+  .animate-spin-smooth,
+  .animate-bounce-subtle,
+  .animate-counter-pop,
+  .progress-bar,
+  .progress-bar-striped,
+  .glow-blue,
+  .glow-amber,
+  .glow-emerald {
+    animation: none !important;
+  }
+}

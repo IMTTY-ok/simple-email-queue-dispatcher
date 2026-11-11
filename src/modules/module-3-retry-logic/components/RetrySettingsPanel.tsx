@@ -96,7 +96,7 @@ export function RetrySettingsPanel({
           max={10}
           value={limit}
           onChange={(e) => { setLimit(Number(e.target.value)); setMessage(null); }}
-          className="w-full h-1.5 rounded-full appearance-none cursor-pointer"
+          className="w-full h-6 cursor-pointer"
           style={{ accentColor: '#8b5cf6' }}
         />
         <p className="text-xs mt-1.5" style={{ color: '#374151' }}>

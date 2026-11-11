@@ -9,25 +9,45 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Dependencies
 node_modules
+.pnp
+.pnp.js
+
+# Build output
 dist
 dist-ssr
+build
 *.local
 
 # Environment / secrets
 .env
 .env.local
 .env.*.local
+*.pem
+*.key
+*-service-account*.json
+*serviceAccount*.json
+gcloud-service-key.json
 
 # Firebase
 .firebase/
 firebase-debug.log
+firestore-debug.log
+ui-debug.log
+*-debug.log
+functions/lib/
+
+# Coverage / test output
+coverage
+.nyc_output
 
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
 .idea
 .DS_Store
+Thumbs.db
 *.suo
 *.ntvs*
 *.njsproj
