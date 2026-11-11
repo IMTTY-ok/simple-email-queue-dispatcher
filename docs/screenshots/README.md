@@ -13,6 +13,7 @@ Captured from the running dashboard against the Firebase emulator suite.
 | `activity-log.png` | the live activity log |
 | `dispatch-retrying.png` | the retry engine working through a failed attempt |
 | `dispatch-finished.png` | the dispatch summary after a run |
+| `responsive/` | the dashboard at each breakpoint (desktop, laptop, tablet, mobile) |
 
 Regenerate them with:
 
