@@ -1,7 +1,7 @@
 {
   "name": "email-dispatcher-functions",
   "private": true,
-  "description": "Firebase Cloud Functions backend for the Email Queue Dispatcher (FIFO queue + Gmail SMTP)",
+  "description": "Firebase Cloud Functions backend for the Email Queue Dispatcher — the five PRD modules (queue creator, send simulator, retry engine, status logger, summary exporter).",
   "main": "index.js",
   "engines": {
     "node": "20"

@@ -273,6 +273,12 @@ Firestore under `_secrets/main`, which the Firestore rules deny to browsers.
 - **`firestore.indexes.json`** — the composite index the FIFO query needs
   (`status` + `seq`).
 
+> **Why is `firebase-functions` pinned to v5?**
+> The backend uses the gen-1 HTTPS API (`firebase-functions/v1`). Version 7
+> removed `functions.config()`, which that API still calls internally, so the
+> function is killed on every request. Upgrading means migrating to the v2
+> API (`onRequest({ ... }, app)`) — worth doing, but as its own change.
+
 ### Deploying
 
 ```bash
