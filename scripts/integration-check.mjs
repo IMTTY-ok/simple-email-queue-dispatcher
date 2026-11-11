@@ -131,7 +131,7 @@ async function main() {
 
   const cfg = await get('/api/config');
   check(cfg.ok, 'config can be read', `status=${cfg.status}`);
-  check(cfg.body?.smtp != null, 'config exposes the smtp section');
+  check(cfg.body?.smtp !== undefined && cfg.body?.smtp !== null, 'config exposes the smtp section');
   check(cfg.body?.smtp?.pass === undefined, 'config never exposes the password');
 
   const save = await post('/api/config', {
