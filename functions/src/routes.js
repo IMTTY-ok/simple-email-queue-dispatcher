@@ -1,38 +1,33 @@
 'use strict';
 
 /**
- * HTTP API — the exact same endpoints the frontend already calls.
- * All routes keep the /api prefix so the Cloud Function base URL +
- * '/api/...' matches the browser's existing apiUrl() path math.
+ * HTTP API — the endpoints the dashboard calls.
+ *
+ * All routes keep the `/api` prefix so the Cloud Function base URL plus
+ * `/api/...` matches the browser's `apiUrl()` path math.
+ *
+ * Each group of endpoints is owned by exactly one module:
+ *
+ *   /api/emails/*     → Module 1  Email Queue Creator
+ *   /api/config/*     → Module 2  Send Simulator (transport configuration)
+ *   /api/dispatch/*   → Module 3  Retry Logic Engine
+ *   /api/activity     → Module 4  Final Status Logger
+ *   /api/stats        → Module 5  Summary Exporter
  */
 
 const express = require('express');
-const { resolveConfig, applyConfigAsync, publicConfig, syncPasswordFlag, ensureSeededConfig } = require('./config.js');
-const { verifyConnection, sendSingleMail, resetTransport, humanError } = require('./smtp.js');
-const store = require('./firestore.js');
-const dispatch = require('./dispatch.js');
+const { ok, fail, h } = require('./shared/http.js');
+const store = require('./shared/store.js');
+const { resolveConfig, applyConfigAsync, publicConfig, syncPasswordFlag, ensureSeededConfig } = require('./shared/config.js');
+const { verifyConnection, sendSingleMail, resetTransport, humanError } = require('./modules/module-2-send-simulator/simulator.js');
+const queue = require('./modules/module-1-email-queue-creator/queue.js');
+const dispatch = require('./modules/module-3-retry-logic/dispatch.js');
+const logger = require('./modules/module-4-final-status-logger/logger.js');
+const summary = require('./modules/module-5-summary-exporter/summary.js');
 
 const router = express.Router();
 
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-function ok(res, payload) {
-  res.json(payload);
-}
-
-function fail(res, status, error) {
-  res.status(status).json({ ok: false, error });
-}
-
-function h(fn) {
-  return (req, res) =>
-    fn(req, res).catch((err) => {
-      console.error('[functions] route error:', err);
-      if (!res.headersSent) fail(res, 500, humanError(err));
-    });
-}
-
-// ── meta / health ──────────────────────────────────────────────────────────────
+// ── health ──────────────────────────────────────────────────────────────────────
 
 router.get('/api/health', h(async (req, res) => {
   const config = await resolveConfig(store.db);
@@ -43,11 +38,11 @@ router.get('/api/health', h(async (req, res) => {
     timestamp: new Date().toISOString(),
     dispatcher: await store.getDispatcherState(),
     smtpConfigured: publicConfig(config).smtpConfigured,
-    stats: await store.getStats(),
+    stats: await summary.getStats(),
   });
 }));
 
-// ── configuration ──────────────────────────────────────────────────────────────
+// ── Module 2 — Send Simulator: configuration ───────────────────────────────────
 
 router.get('/api/config', h(async (req, res) => {
   const config = await resolveConfig(store.db);
@@ -79,7 +74,7 @@ router.post('/api/config/test', h(async (req, res) => {
 
 router.post('/api/config/test-send', h(async (req, res) => {
   const { to } = req.body || {};
-  if (!to || !EMAIL_REGEX.test(String(to))) {
+  if (!to || !queue.EMAIL_REGEX.test(String(to))) {
     return fail(res, 400, 'Valid recipient email required.');
   }
   const config = await resolveConfig(store.db);
@@ -97,14 +92,14 @@ router.post('/api/config/test-send', h(async (req, res) => {
   }
 }));
 
-// ── emails (queue) ─────────────────────────────────────────────────────────────
+// ── Module 1 — Email Queue Creator ──────────────────────────────────────────────
 
 router.get('/api/emails', h(async (req, res) => {
-  ok(res, await store.listEmails());
+  ok(res, await queue.listEmails());
 }));
 
 router.get('/api/emails/:id', h(async (req, res) => {
-  const email = await store.getEmail(req.params.id);
+  const email = await queue.getEmail(req.params.id);
   if (!email) return fail(res, 404, 'Email not found.');
   ok(res, email);
 }));
@@ -114,69 +109,65 @@ router.post('/api/emails/batch', h(async (req, res) => {
   if (!Array.isArray(items) || items.length === 0) {
     return fail(res, 400, 'items[] with recipient/subject/message is required.');
   }
+  if (items.length > 100) {
+    return fail(res, 400, 'A batch may contain at most 100 emails.');
+  }
   const config = await resolveConfig(store.db);
 
   const created = [];
   for (const item of items) {
-    const { recipient, subject, message, senderName } = item || {};
-    if (!recipient || !String(recipient).trim()) return fail(res, 400, 'Recipient email is required for every item.');
-    if (!EMAIL_REGEX.test(String(recipient).trim())) return fail(res, 400, `Invalid recipient: ${recipient}`);
-    if (!subject || !String(subject).trim()) return fail(res, 400, 'Subject is required for every item.');
-    if (!message || !String(message).trim()) return fail(res, 400, 'Message is required for every item.');
-    created.push(
-      (await store.enqueue(
-        {
-          recipient: String(recipient).trim(),
-          subject: String(subject).trim(),
-          message: String(message).trim(),
-          senderName: senderName ? String(senderName).trim() : '',
-        },
-        config.retryLimit
-      )).email
-    );
+    const validation = queue.validateEmail(item);
+    if (!validation.ok) return fail(res, 400, validation.error);
+    const { email } = await queue.enqueue(validation.value, config.retryLimit);
+    created.push(email);
+    await logger.pushActivity({
+      emailId: email.id,
+      message: `${email.id} queued for delivery (position ${created.length})`,
+      type: 'info',
+    });
   }
   ok(res, { ok: true, count: created.length, created });
 }));
 
 router.post('/api/emails', h(async (req, res) => {
-  const { recipient, subject, message, senderName } = req.body || {};
-
-  if (!recipient || !String(recipient).trim()) return fail(res, 400, 'Recipient email is required.');
-  if (!EMAIL_REGEX.test(String(recipient).trim())) return fail(res, 400, 'Please enter a valid email address.');
-  if (!subject || !String(subject).trim()) return fail(res, 400, 'Subject is required.');
-  if (!message || !String(message).trim()) return fail(res, 400, 'Message is required.');
+  const validation = queue.validateEmail(req.body || {});
+  if (!validation.ok) return fail(res, 400, validation.error);
 
   const config = await resolveConfig(store.db);
-  const { email, position } = await store.enqueue(
-    {
-      recipient: String(recipient).trim(),
-      subject: String(subject).trim(),
-      message: String(message).trim(),
-      senderName: senderName ? String(senderName).trim() : '',
-    },
-    config.retryLimit
-  );
+  const { email, position } = await queue.enqueue(validation.value, config.retryLimit);
+  await logger.pushActivity({
+    emailId: email.id,
+    message: `${email.id} queued for delivery (position ${position})`,
+    type: 'info',
+  });
 
   ok(res, { ok: true, email, position });
 }));
 
 router.delete('/api/emails/:id', h(async (req, res) => {
-  const removed = await store.removeEmail(req.params.id);
+  const removed = await queue.removeEmail(req.params.id);
   if (!removed) return fail(res, 404, 'Email not found.');
+  await logger.pushActivity({ emailId: removed.id, message: `${removed.id} removed from queue`, type: 'warning' });
   ok(res, { ok: true, removed });
 }));
 
-// ── activity + stats ───────────────────────────────────────────────────────────
+// ── Module 4 — Final Status Logger ─────────────────────────────────────────────
 
 router.get('/api/activity', h(async (req, res) => {
-  ok(res, await store.listActivity());
+  ok(res, await logger.listActivity());
 }));
+
+// ── Module 5 — Summary Exporter ─────────────────────────────────────────────────
 
 router.get('/api/stats', h(async (req, res) => {
-  ok(res, await store.getStats());
+  ok(res, await summary.getStats());
 }));
 
-// ── dispatcher lifecycle ───────────────────────────────────────────────────────
+router.get('/api/report', h(async (req, res) => {
+  ok(res, await summary.buildReport());
+}));
+
+// ── Module 3 — Retry Logic Engine: dispatcher lifecycle ─────────────────────────
 
 router.post('/api/dispatch/start', h(async (req, res) => {
   const result = await dispatch.startDispatch();

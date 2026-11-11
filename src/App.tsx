@@ -1,29 +1,44 @@
-import { useState, useCallback } from 'react';
-import { useEmailDispatcher } from './hooks/useEmailDispatcher';
-import { Header } from './components/Header';
-import { StatsCards } from './components/StatsCards';
-import { AddEmailForm } from './components/AddEmailForm';
-import { QueuePanel } from './components/QueuePanel';
-import { ProcessingPanel } from './components/ProcessingPanel';
-import { ActivityLog } from './components/ActivityLog';
-import { SettingsPanel } from './components/SettingsPanel';
-import { ExportPanel } from './components/ExportPanel';
+import { useCallback, useState } from 'react';
 import { AlertTriangle, WifiOff, FlaskConical, Send } from 'lucide-react';
+import { useEmailDispatcher } from './shared/hooks/useEmailDispatcher';
+import { Header } from './shared/components/Header';
+import { StatsCards } from './modules/module-5-summary-exporter/components/StatsCards';
+import { AddEmailForm } from './modules/module-1-email-queue-creator/components/AddEmailForm';
+import { DemoDataButton } from './modules/module-1-email-queue-creator/components/DemoDataButton';
+import { QueuePanel } from './modules/module-1-email-queue-creator/components/QueuePanel';
+import { SettingsPanel } from './modules/module-2-send-simulator/components/SettingsPanel';
+import { ProcessingPanel } from './modules/module-3-retry-logic/components/ProcessingPanel';
+import { RetrySettingsPanel } from './modules/module-3-retry-logic/components/RetrySettingsPanel';
+import { ActivityLog } from './modules/module-4-final-status-logger/components/ActivityLog';
+import { ExportPanel } from './modules/module-5-summary-exporter/components/ExportPanel';
+import { SIMULATION_MODE_LABELS } from './shared/constants';
 
+/**
+ * The dashboard shell.
+ *
+ * It owns the page layout only — every piece of behaviour lives in one of
+ * the five modules:
+ *
+ *   1. Email Queue Creator    → AddEmailForm, DemoDataButton, QueuePanel
+ *   2. Send Simulator         → SettingsPanel (SMTP + simulation mode)
+ *   3. Retry Logic Engine     → ProcessingPanel, RetrySettingsPanel
+ *   4. Final Status Logger    → ActivityLog
+ *   5. Summary Exporter       → StatsCards, ExportPanel
+ */
 export default function App() {
   const {
     state,
     currentEmail,
     addEmail,
     loadDemoData,
-    start,
-    pause,
-    resume,
-    reset,
     removeEmail,
     saveConfig,
     testConnection,
     testSend,
+    start,
+    pause,
+    resume,
+    reset,
   } = useEmailDispatcher();
 
   const [startError, setStartError] = useState<string | null>(null);
@@ -32,6 +47,7 @@ export default function App() {
   const isProcessing = dispatcher.running && !dispatcher.paused;
   const isPaused = dispatcher.paused;
   const dryRun = Boolean(config?.dryRun);
+  const simulationMode = config?.simulationMode ?? 'AUTOMATIC';
 
   const handleStart = useCallback(async () => {
     setStartError(null);
@@ -85,6 +101,8 @@ export default function App() {
               border: '1px solid rgba(248,113,113,0.3)',
               color: '#fca5a5',
             }}
+            role="status"
+            aria-live="polite"
           >
             <WifiOff className="w-4 h-4 shrink-0" style={{ color: '#f87171' }} />
             Dispatcher data source unreachable. Start the Firebase emulators:
@@ -101,6 +119,7 @@ export default function App() {
               border: '1px solid rgba(217,119,6,0.35)',
               color: '#fcd34d',
             }}
+            role="alert"
           >
             <AlertTriangle className="w-4 h-4 shrink-0" style={{ color: '#fbbf24' }} />
             {startError}
@@ -116,23 +135,25 @@ export default function App() {
               border: dryRun ? '1px solid rgba(217,119,6,0.3)' : '1px solid rgba(52,211,153,0.25)',
               color: dryRun ? '#fcd34d' : '#6ee7b7',
             }}
+            role="status"
+            aria-live="polite"
           >
             {dryRun
               ? <FlaskConical className="w-4 h-4 shrink-0" />
               : <Send className="w-4 h-4 shrink-0" />
             }
             {dryRun
-              ? 'DRY-RUN — delivery is simulated (no real emails). Click SMTP Dispatcher Settings to configure real sending.'
+              ? `DRY-RUN — delivery is simulated (${SIMULATION_MODE_LABELS[simulationMode]}). Click SMTP Dispatcher Settings to configure real sending.`
               : config?.smtpConfigured
                 ? `LIVE — emails are sent for real via SMTP to ${config.smtp.host}:${config.smtp.port}.`
                 : 'SMTP not configured — configure it in SMTP Dispatcher Settings to send real emails.'}
           </div>
         )}
 
-        {/* Stats row */}
+        {/* Module 5 — Summary Exporter: live statistics */}
         <StatsCards stats={stats} />
 
-        {/* Queue + Processing */}
+        {/* Module 1 — Email Queue Creator + Module 3 — Retry Logic Engine */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4" style={{ minHeight: '420px' }}>
           <QueuePanel
             emails={emails}
@@ -151,21 +172,31 @@ export default function App() {
         {/* Bottom: Settings + Form | Log | Export */}
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
           <div className="space-y-4">
+            {/* Module 2 — Send Simulator */}
             <SettingsPanel
               config={config}
-              isProcessing={isProcessing}
               onSaveConfig={saveConfig}
               onTestConnection={testConnection}
               onTestSend={testSend}
-              onLoadDemo={loadDemoData}
             />
+            {/* Module 3 — Retry Logic Engine */}
+            <RetrySettingsPanel
+              retryLimit={config?.retryLimit ?? 3}
+              retryDelayMs={config?.retryDelayMs ?? 3000}
+              isProcessing={isProcessing}
+              onSave={saveConfig}
+            />
+            {/* Module 1 — Email Queue Creator */}
             <AddEmailForm onAdd={addEmail} disabled={isProcessing} />
+            <DemoDataButton disabled={isProcessing} onLoadDemo={loadDemoData} />
           </div>
 
+          {/* Module 4 — Final Status Logger */}
           <div style={{ minHeight: '500px', maxHeight: '640px' }} className="flex flex-col">
             <ActivityLog entries={activityLog} />
           </div>
 
+          {/* Module 5 — Summary Exporter */}
           <div>
             <ExportPanel emails={emails} stats={stats} />
           </div>
