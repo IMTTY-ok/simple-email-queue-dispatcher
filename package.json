@@ -22,7 +22,7 @@
   "scripts": {
     "dev": "concurrently -k -n emu,web -c yellow,cyan \"npm:dev:emulators\" \"npm:dev:web\"",
     "dev:web": "vite",
-    "dev:emulators": "cross-env FUNCTIONS_DISCOVERY_TIMEOUT=300 firebase emulators:start --only functions,firestore --project email-dispatcher-43118",
+    "dev:emulators": "cross-env FUNCTIONS_DISCOVERY_TIMEOUT=300 firebase emulators:start --only functions,firestore",
     "dev:setup": "npm install --prefix functions",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b",

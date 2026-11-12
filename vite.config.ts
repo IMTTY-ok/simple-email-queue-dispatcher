@@ -1,5 +1,37 @@
+import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+
+/**
+ * Resolve the Firebase project id.
+ *
+ * Priority:
+ *   1. `VITE_FIREBASE_PROJECT_ID` — an explicit override
+ *   2. the `default` project in `.firebaserc` — the single place to change
+ *   3. the bundled demo project, so the repository works out of the box
+ */
+function resolveFirebaseProjectId(): string {
+  const fromEnv = process.env.VITE_FIREBASE_PROJECT_ID;
+  if (fromEnv) return fromEnv;
+
+  try {
+    const firebaserc = JSON.parse(readFileSync('.firebaserc', 'utf8'));
+    const fromFirebaserc = firebaserc?.projects?.default;
+    if (typeof fromFirebaserc === 'string' && fromFirebaserc) return fromFirebaserc;
+  } catch {
+    // no .firebaserc (or it is unreadable) — fall through to the default
+  }
+
+  return 'email-dispatcher-43118';
+}
+
+const firebaseProjectId = resolveFirebaseProjectId();
+
+/**
+ * The Functions emulator serves the API under
+ * `http://127.0.0.1:5001/<project-id>/us-central1/backend`.
+ */
+const functionsEmulatorUrl = `http://127.0.0.1:5001/${firebaseProjectId}/us-central1/backend`;
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -24,7 +56,7 @@ export default defineConfig({
     proxy: {
       // Development proxy → Firebase Cloud Functions emulator (functions)
       '/api': {
-        target: 'http://127.0.0.1:5001/email-dispatcher-43118/us-central1/backend',
+        target: functionsEmulatorUrl,
         changeOrigin: true,
       },
     },
