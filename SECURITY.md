@@ -5,8 +5,12 @@
 **Please do not open a public issue for a security problem.**
 
 Report it privately through GitHub's *Report a vulnerability* button on the
-repository's **Security** tab, or by email to the maintainer
-(`REDACTED-EMAIL`). Please include:
+repository's **Security** tab. Private vulnerability reporting is enabled for
+this repository, so the report goes straight to the maintainers and stays
+confidential.
+
+If that is not an option for you, contact the maintainer through their
+[GitHub profile](https://github.com/IMTTY-ok). Please include:
 
 - what the issue is and which component is affected
 - how to reproduce it
