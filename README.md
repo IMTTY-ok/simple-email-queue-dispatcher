@@ -9,7 +9,8 @@
 > automatically → the whole run is exportable as a report.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-![Node](https://img.shields.io/badge/node-%3E%3D20-3FA111?logo=node.js)
+[![CI](https://github.com/IMTTY-ok/simple-email-queue-dispatcher/actions/workflows/ci.yml/badge.svg)](https://github.com/IMTTY-ok/simple-email-queue-dispatcher/actions/workflows/ci.yml)
+![Node](https://img.shields.io/badge/node-%3E%3D22.12-3FA111?logo=node.js)
 ![React](https://img.shields.io/badge/react-19-61DAFB?logo=react)
 ![TypeScript](https://img.shields.io/badge/typescript-6-3178C6?logo=typescript)
 ![Vite](https://img.shields.io/badge/vite-8-646CFF?logo=vite)
@@ -169,7 +170,7 @@ folder names, so a feature is easy to follow across the whole stack.
 
 ### Prerequisites
 
-- **Node.js 20 or newer** — check with `node --version`
+- **Node.js 22.12 or newer** — check with `node --version`
 - An SMTP account — *only* if you want to send real email. Dry-run mode needs none.
   For Gmail: enable 2FA → **App Password** at
   `myaccount.google.com → Security → App passwords`.
