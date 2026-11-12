@@ -32,10 +32,13 @@ build
 *.p12
 *.pfx
 *.jks
-*-service-account*.json
+service-account*.json
+*service-account*.json
+*service_account*.json
 *serviceAccount*.json
 gcloud-service-key.json
 firebase-adminsdk-*.json
+*credential*.json
 
 # ── Firebase ───────────────────────────────────────────────────────────────────
 .firebase/
@@ -43,6 +46,7 @@ firebase-debug.log
 firestore-debug.log
 ui-debug.log
 *-debug.log
+functions/lib
 functions/lib/
 .emulator/
 
