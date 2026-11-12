@@ -37,6 +37,12 @@ export const SMTP_PORT_OPTIONS = [
   { value: 25, label: '25 (plain)', secure: false },
 ];
 
+/** The two roles the application understands, with their display labels. */
+export const ROLE_LABELS: Record<string, string> = {
+  admin: 'Administrator',
+  operator: 'Operator',
+};
+
 /**
  * Module 1 — Email Queue Creator.
  * The five sample emails loaded by the "Load Demo Data" button (PRD §25).

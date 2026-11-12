@@ -58,7 +58,7 @@ function validateEmail(input) {
 }
 
 /** Build a fresh email document (not yet written to Firestore). */
-async function makeEmail({ recipient, subject, message, senderName }, retryLimit) {
+async function makeEmail({ recipient, subject, message, senderName }, retryLimit, createdBy) {
   const seq = await store.claimSeq('emailSeq');
   const now = store.stamp();
   return {
@@ -68,6 +68,9 @@ async function makeEmail({ recipient, subject, message, senderName }, retryLimit
     subject,
     message,
     senderName: senderName || null,
+    // The account that created the email. The Firestore rules use this to keep
+    // an operator inside their own queue entries.
+    createdBy: createdBy || null,
     status: 'QUEUED',
     attempts: 0,
     retries: 0,
@@ -84,19 +87,28 @@ async function makeEmail({ recipient, subject, message, senderName }, retryLimit
 /**
  * Add an email to the rear of the queue.
  *
+ * @param {object} input validated email fields
+ * @param {number} retryLimit attempts allowed for this email
+ * @param {string} [createdBy] uid of the account that created it
  * @returns {Promise<{ email: object, position: number }>}
  */
-async function enqueue(input, retryLimit = 3) {
-  const email = await makeEmail(input, retryLimit);
+async function enqueue(input, retryLimit = 3, createdBy = null) {
+  const email = await makeEmail(input, retryLimit, createdBy);
   await store.emailsCol().doc(email.id).set(email);
   await store.bumpStats({ total: 1, queued: 1 });
   const position = await queuedCount();
   return { email, position };
 }
 
-/** Every queued email, oldest first. */
-async function listEmails() {
-  const snap = await store.emailsCol().orderBy('seq', 'asc').get();
+/**
+ * Every email, oldest first.
+ * @param {string} [createdBy] when given, only that account's emails
+ */
+async function listEmails(createdBy = null) {
+  const query = createdBy
+    ? store.emailsCol().where('createdBy', '==', createdBy).orderBy('seq', 'asc')
+    : store.emailsCol().orderBy('seq', 'asc');
+  const snap = await query.get();
   return snap.docs.map((d) => d.data());
 }
 

@@ -43,9 +43,11 @@ async function getStats() {
 /**
  * A dispatch report: the summary statistics plus one row per processed email.
  * `finalStatus` is `DELIVERED` / `FAILED` / `null` (still queued).
+ *
+ * @param {string|null} [createdBy] when given, only that account's emails
  */
-async function buildReport() {
-  const [stats, emails] = await Promise.all([getStats(), listReportedEmails()]);
+async function buildReport(createdBy = null) {
+  const [stats, emails] = await Promise.all([getStats(), listReportedEmails(createdBy)]);
   return {
     exportedAt: store.stamp(),
     summary: stats,
@@ -53,9 +55,15 @@ async function buildReport() {
   };
 }
 
-/** All emails in FIFO order — the rows of the exported report. */
-async function listReportedEmails() {
-  const snap = await store.emailsCol().orderBy('seq', 'asc').get();
+/**
+ * All emails in FIFO order — the rows of the exported report.
+ * @param {string|null} [createdBy] when given, only that account's emails
+ */
+async function listReportedEmails(createdBy = null) {
+  const query = createdBy
+    ? store.emailsCol().where('createdBy', '==', createdBy).orderBy('seq', 'asc')
+    : store.emailsCol().orderBy('seq', 'asc');
+  const snap = await query.get();
   return snap.docs.map((d) => d.data());
 }
 

@@ -1,7 +1,10 @@
 import { useCallback, useState } from 'react';
-import { AlertTriangle, WifiOff, FlaskConical, Send } from 'lucide-react';
+import { AlertTriangle, WifiOff, FlaskConical, Send, ShieldCheck } from 'lucide-react';
 import { useEmailDispatcher } from './shared/hooks/useEmailDispatcher';
+import { useAuth } from './shared/auth/useAuth';
 import { Header } from './shared/components/Header';
+import { LoginScreen } from './shared/components/LoginScreen';
+import { AdminPanel } from './shared/components/AdminPanel';
 import { StatsCards } from './modules/module-5-summary-exporter/components/StatsCards';
 import { AddEmailForm } from './modules/module-1-email-queue-creator/components/AddEmailForm';
 import { DemoDataButton } from './modules/module-1-email-queue-creator/components/DemoDataButton';
@@ -11,7 +14,7 @@ import { ProcessingPanel } from './modules/module-3-retry-logic/components/Proce
 import { RetrySettingsPanel } from './modules/module-3-retry-logic/components/RetrySettingsPanel';
 import { ActivityLog } from './modules/module-4-final-status-logger/components/ActivityLog';
 import { ExportPanel } from './modules/module-5-summary-exporter/components/ExportPanel';
-import { SIMULATION_MODE_LABELS } from './shared/constants';
+import { ROLE_LABELS, SIMULATION_MODE_LABELS } from './shared/constants';
 
 /**
  * The dashboard shell.
@@ -26,6 +29,8 @@ import { SIMULATION_MODE_LABELS } from './shared/constants';
  *   5. Summary Exporter       → StatsCards, ExportPanel
  */
 export default function App() {
+  const auth = useAuth();
+
   const {
     state,
     currentEmail,
@@ -39,9 +44,9 @@ export default function App() {
     pause,
     resume,
     reset,
-  } = useEmailDispatcher();
+  } = useEmailDispatcher(auth.user?.uid ?? null, auth.role);
 
-  const [dispatchError, setdispatchError] = useState<string | null>(null);
+  const [dispatchError, setDispatchError] = useState<string | null>(null);
 
   const { stats, emails, activityLog, dispatcher, config, connected } = state;
   const isProcessing = dispatcher.running && !dispatcher.paused;
@@ -50,19 +55,19 @@ export default function App() {
   const simulationMode = config?.simulationMode ?? 'AUTOMATIC';
 
   const handleStart = useCallback(async () => {
-    setdispatchError(null);
+    setDispatchError(null);
     const result = isPaused ? await resume() : await start();
     if (!result.success && result.error) {
-      setdispatchError(result.error);
-      setTimeout(() => setdispatchError(null), 5000);
+      setDispatchError(result.error);
+      setTimeout(() => setDispatchError(null), 5000);
     }
   }, [isPaused, resume, start]);
 
   const handlePause = useCallback(async () => {
     const result = await pause();
     if (!result.success && result.error) {
-      setdispatchError(result.error);
-      setTimeout(() => setdispatchError(null), 5000);
+      setDispatchError(result.error);
+      setTimeout(() => setDispatchError(null), 5000);
     }
   }, [pause]);
 
@@ -72,10 +77,26 @@ export default function App() {
     }
     const result = await reset();
     if (!result.success && result.error) {
-      setdispatchError(result.error);
-      setTimeout(() => setdispatchError(null), 5000);
+      setDispatchError(result.error);
+      setTimeout(() => setDispatchError(null), 5000);
     }
   }, [dispatcher.running, dispatcher.paused, reset]);
+
+  // ── not signed in ──────────────────────────────────────────────────────────
+  if (auth.loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: '#080b12' }}>
+        <div className="flex items-center gap-3 text-sm text-gray-500">
+          <span className="w-4 h-4 rounded-full border-2 border-blue-500 border-t-transparent animate-spin" />
+          Checking your session…
+        </div>
+      </div>
+    );
+  }
+
+  if (!auth.user) {
+    return <LoginScreen onSignIn={auth.signIn} onSignUp={auth.signUp} error={auth.error} />;
+  }
 
   return (
     <div className="min-h-screen" style={{ background: '#080b12' }}>
@@ -93,9 +114,12 @@ export default function App() {
         isProcessing={isProcessing}
         isPaused={isPaused}
         connected={connected}
+        accountLabel={auth.profile?.displayName || auth.user.email || 'Signed in'}
+        roleLabel={auth.role ? ROLE_LABELS[auth.role] : ''}
         onStart={handleStart}
         onPause={handlePause}
         onReset={handleReset}
+        onSignOut={auth.signOut}
       />
 
       <main className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-5">
@@ -182,13 +206,33 @@ export default function App() {
         {/* Bottom: Settings + Form | Log | Export */}
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
           <div className="space-y-4">
-            {/* Module 2 — Send Simulator */}
-            <SettingsPanel
-              config={config}
-              onSaveConfig={saveConfig}
-              onTestConnection={testConnection}
-              onTestSend={testSend}
-            />
+            {/* Module 2 — Send Simulator (administrator only) */}
+            {auth.isAdmin ? (
+              <SettingsPanel
+                config={config}
+                onSaveConfig={saveConfig}
+                onTestConnection={testConnection}
+                onTestSend={testSend}
+              />
+            ) : (
+              <div
+                className="rounded-2xl p-5 space-y-2"
+                style={{
+                  background: 'linear-gradient(160deg, rgba(14,18,28,0.95) 0%, rgba(8,11,18,0.98) 100%)',
+                  border: '1px solid rgba(255,255,255,0.06)',
+                }}
+              >
+                <h2 className="text-xs font-bold text-gray-300 uppercase tracking-widest flex items-center gap-2">
+                  <ShieldCheck className="w-3.5 h-3.5 text-purple-400" />
+                  SMTP Dispatcher Settings
+                </h2>
+                <p className="text-xs leading-snug" style={{ color: '#4b5563' }}>
+                  The SMTP configuration holds the mailbox and the sender identity, so it is
+                  restricted to administrators. Ask an administrator to change it.
+                </p>
+              </div>
+            )}
+
             {/* Module 3 — Retry Logic Engine */}
             <RetrySettingsPanel
               retryLimit={config?.retryLimit ?? 3}
@@ -196,6 +240,7 @@ export default function App() {
               isProcessing={isProcessing}
               onSave={saveConfig}
             />
+
             {/* Module 1 — Email Queue Creator */}
             <AddEmailForm onAdd={addEmail} disabled={isProcessing} />
             <DemoDataButton disabled={isProcessing} onLoadDemo={loadDemoData} />
@@ -207,8 +252,11 @@ export default function App() {
           </div>
 
           {/* Module 5 — Summary Exporter */}
-          <div>
+          <div className="space-y-4">
             <ExportPanel emails={emails} stats={stats} />
+            {auth.isAdmin && auth.user && (
+              <AdminPanel currentUid={auth.user.uid} />
+            )}
           </div>
         </div>
       </main>

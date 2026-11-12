@@ -1,24 +1,89 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Dashboard data is read from the browser in realtime (Firebase SDK).
-    // All writes happen server-side through the HTTPS Cloud Function (Admin SDK),
-    // so direct client writes are always denied.
-    match /emails/{id}   { allow read: if true; allow write: if false; }
-    match /activity/{id} { allow read: if true; allow write: if false; }
-    match /stats/{id}    { allow read: if true; allow write: if false; }
-    match /_config/{id}  { allow read: if true; allow write: if false; }
 
-    // Only the dispatcher state itself is browser-readable. The dispatch
-    // lease and the sequence counters are internal bookkeeping.
-    match /_meta/main { allow read: if true; allow write: if false; }
-    match /_meta/{id} { allow read: if false; allow write: if false; }
+    // ── helpers ──────────────────────────────────────────────────────────────
+    // A signed-in account, or null when the request is anonymous.
+    function currentUser() {
+      return request.auth != null ? request.auth.uid : null;
+    }
 
-    // Server-only secret storage (e.g. SMTP password set from the dashboard).
-    // Never readable/writable by browser clients, regardless of any other rule.
-    match /_secrets/{id} { allow read, write: if false; }
+    // True when the caller holds the administrator role. The role lives in
+    // `users/{uid}` and is written by the Cloud Function (Admin SDK) only —
+    // a client can never promote itself.
+    function isAdmin() {
+      return currentUser() != null
+        && exists(/databases/$(database)/documents/users/$(currentUser()))
+        && get(/databases/$(database)/documents/users/$(currentUser())).data.role == 'admin';
+    }
 
+    // True when the caller owns the document it is trying to read.
+    function isOwner() {
+      return currentUser() != null
+        && resource.data.createdBy == currentUser();
+    }
+
+    // ── user profiles ────────────────────────────────────────────────────────
+    // The owner may read their own profile; administrators may read all.
+    // Writes are handled by the Cloud Function, which is the only writer.
+    match /users/{uid} {
+      allow read: if currentUser() == uid || isAdmin();
+      allow write: if false;
+    }
+
+    // ── email queue (Module 1) ───────────────────────────────────────────────
+    // An operator only sees the emails they created; an administrator sees
+    // the whole installation. Every write goes through the Cloud Function
+    // (Admin SDK), so the browser never writes.
+    match /emails/{id} {
+      allow read: if currentUser() != null && (isOwner() || isAdmin());
+      allow write: if false;
+    }
+
+    // ── activity log (Module 4) ──────────────────────────────────────────────
+    match /activity/{id} {
+      allow read: if currentUser() != null && (isOwner() || isAdmin());
+      allow write: if false;
+    }
+
+    // ── statistics (Module 5) ────────────────────────────────────────────────
+    // Aggregate counters only — no personal data.
+    match /stats/{id} {
+      allow read: if currentUser() != null;
+      allow write: if false;
+    }
+
+    // ── dispatcher state ─────────────────────────────────────────────────────
+    // The live dispatcher flags every signed-in account needs for the
+    // dashboard. The lease and the sequence counters stay private.
+    match /_meta/main {
+      allow read: if currentUser() != null;
+      allow write: if false;
+    }
+    match /_meta/{id} {
+      allow read: if false;
+      allow write: if false;
+    }
+
+    // ── configuration (Module 2) ─────────────────────────────────────────────
+    // Holds the SMTP host, the mailbox and the sender identity — only an
+    // administrator may read it.
+    match /_config/{id} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // ── secrets ──────────────────────────────────────────────────────────────
+    // The SMTP password. Never readable or writable by a browser, under any
+    // circumstances.
+    match /_secrets/{id} {
+      allow read, write: if false;
+    }
+
+    // ── default deny ─────────────────────────────────────────────────────────
     // Anything not matched above is denied.
-    match /{document=**} { allow read, write: if false; }
+    match /{document=**} {
+      allow read, write: if false;
+    }
   }
 }

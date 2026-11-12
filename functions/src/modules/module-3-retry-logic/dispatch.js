@@ -179,6 +179,7 @@ async function reapStale() {
         emailId: email.id,
         message: `${email.id} — requeued after stale dispatch lease`,
         type: 'warning',
+        createdBy: email.createdBy || null,
       });
     }
   }

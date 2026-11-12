@@ -1,8 +1,11 @@
+import { auth } from '../lib/firebase';
+
 /**
  * Shared HTTP client for the Cloud Function API.
  *
  * Every request the dashboard makes goes through `api()`. It resolves the
- * base URL once, sends JSON, and turns a non-2xx response into a readable
+ * base URL once, attaches the signed-in account's Firebase ID token as a
+ * bearer token, sends JSON, and turns a non-2xx response into a readable
  * `Error` so callers never have to inspect the raw response.
  */
 
@@ -18,15 +21,34 @@ export function apiUrl(path: string): string {
 }
 
 /**
+ * The current account's ID token, or `null` when nobody is signed in.
+ * The token is refreshed automatically by the Firebase SDK.
+ */
+async function idToken(): Promise<string | null> {
+  const user = auth.currentUser;
+  if (!user) return null;
+  try {
+    return await user.getIdToken();
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Perform a JSON request against the API.
+ *
  * @throws {Error} with a human-readable message when the request fails.
  */
 export async function api<T = unknown>(path: string, options: RequestInit = {}): Promise<T> {
-  const init: RequestInit = {
-    ...options,
-    headers: options.body ? { 'Content-Type': 'application/json', ...options.headers } : options.headers,
+  const token = await idToken();
+
+  const headers: Record<string, string> = {
+    ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+    ...((options.headers as Record<string, string>) || {}),
   };
-  const res = await fetch(apiUrl(path), init);
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const res = await fetch(apiUrl(path), { ...options, headers });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     throw new Error((data as { error?: string }).error || `Request failed (${res.status})`);
