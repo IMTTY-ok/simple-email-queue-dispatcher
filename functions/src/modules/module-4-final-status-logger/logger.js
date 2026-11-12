@@ -20,6 +20,10 @@
  *
  * The logger is the only place allowed to change an email's status, so the
  * statistics counters can never drift away from the documents themselves.
+ *
+ * Activity entries inherit the `createdBy` of the email they concern. The
+ * Firestore rules use that field to keep an operator out of another account's
+ * dispatch history.
  */
 
 const store = require('../../shared/store.js');
@@ -31,8 +35,14 @@ const ACTIVITY_TYPES = ['info', 'success', 'failure', 'retry', 'warning'];
 /**
  * Append a global activity entry.
  * The history is bounded — the oldest entries are trimmed away.
+ *
+ * @param {object} entry
+ * @param {string} entry.emailId the email the entry is about
+ * @param {string} entry.message the human-readable text
+ * @param {string} entry.type one of ACTIVITY_TYPES
+ * @param {string|null} [entry.createdBy] the account the entry belongs to
  */
-async function pushActivity({ emailId, message, type }) {
+async function pushActivity({ emailId, message, type, createdBy = null }) {
   const seq = await store.claimSeq('activitySeq');
   const id = `ACT-${store.pad(seq)}`;
   const entry = {
@@ -41,6 +51,7 @@ async function pushActivity({ emailId, message, type }) {
     emailId,
     message,
     type: ACTIVITY_TYPES.includes(type) ? type : 'info',
+    createdBy,
     timestamp: store.stamp(),
   };
   await store.activityCol().doc(id).set(entry);
@@ -51,9 +62,15 @@ async function pushActivity({ emailId, message, type }) {
   return entry;
 }
 
-/** The most recent activity entries, newest first. */
-async function listActivity() {
-  const snap = await store.activityCol().orderBy('seq', 'desc').limit(store.HISTORY_LIMIT).get();
+/**
+ * The most recent activity entries, newest first.
+ * @param {string|null} [createdBy] when given, only that account's entries
+ */
+async function listActivity(createdBy = null) {
+  const query = createdBy
+    ? store.activityCol().where('createdBy', '==', createdBy).orderBy('seq', 'desc').limit(store.HISTORY_LIMIT)
+    : store.activityCol().orderBy('seq', 'desc').limit(store.HISTORY_LIMIT);
+  const snap = await query.get();
   return snap.docs.map((d) => d.data());
 }
 
@@ -90,9 +107,9 @@ async function moveStatus(id, toStatus, payload = {}, sideDeltas = {}) {
  * Record the outcome of a single SMTP attempt in the email's own history.
  */
 async function logAttempt(id, attempt, result, detail) {
-  const email = await store.emailsCol().doc(id).get();
-  if (!email.exists) return null;
-  const data = email.data();
+  const snap = await store.emailsCol().doc(id).get();
+  if (!snap.exists) return null;
+  const data = snap.data();
   const logs = Array.isArray(data.logs) ? data.logs : [];
   logs.push({ attempt, result, detail, timestamp: store.stamp() });
   await store.emailsCol().doc(id).set({ logs }, { merge: true });
@@ -100,6 +117,7 @@ async function logAttempt(id, attempt, result, detail) {
     emailId: id,
     message: `${id} — Attempt ${attempt}: ${result}${detail ? ` (${detail})` : ''}`,
     type: result === 'SUCCESS' ? 'success' : 'failure',
+    createdBy: data.createdBy || null,
   });
   return logs;
 }
@@ -113,6 +131,7 @@ async function markSending(id, attempt = 1) {
     emailId: id,
     message: `${id} — dispatch started (attempt ${attempt} of ${email.retryLimit + 1})`,
     type: 'info',
+    createdBy: email.createdBy || null,
   });
   return email;
 }
@@ -123,9 +142,9 @@ async function markSending(id, attempt = 1) {
  * never stranded off-queue (nextQueued() would never find it again).
  */
 async function requeueInFlight(id) {
-  const email = await store.emailsCol().doc(id).get();
-  if (!email.exists) return null;
-  const data = email.data();
+  const snap = await store.emailsCol().doc(id).get();
+  if (!snap.exists) return null;
+  const data = snap.data();
   if (data.status !== 'SENDING' && data.status !== 'RETRYING') return null;
   const requeued = await moveStatus(id, 'QUEUED');
   if (requeued) {
@@ -134,6 +153,7 @@ async function requeueInFlight(id) {
       emailId: id,
       message: `${id} — requeued (dispatch interrupted mid-flight)`,
       type: 'warning',
+      createdBy: data.createdBy || null,
     });
   }
   return requeued;
@@ -147,6 +167,7 @@ async function markRetrying(id, attempt) {
       emailId: id,
       message: `${id} — delivery failed, retrying (attempt ${attempt + 1})`,
       type: 'retry',
+      createdBy: email.createdBy || null,
     });
   }
   return email;
@@ -167,6 +188,7 @@ async function markDelivered(id, attempt, smtpInfo) {
       emailId: id,
       message: `${id} — DELIVERED (accepted by mail server${accepted ? ` · ${accepted}` : ''})`,
       type: 'success',
+      createdBy: email.createdBy || null,
     });
   }
   return email;
@@ -185,6 +207,7 @@ async function markFailed(id, attempt, detail) {
       emailId: id,
       message: `${id} — FAILED (${detail || 'could not be sent'})`,
       type: 'failure',
+      createdBy: email.createdBy || null,
     });
   }
   return email;

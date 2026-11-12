@@ -7,6 +7,22 @@
         { "fieldPath": "status", "order": "ASC" },
         { "fieldPath": "seq", "order": "ASC" }
       ]
+    },
+    {
+      "collectionGroup": "emails",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "createdBy", "order": "ASC" },
+        { "fieldPath": "seq", "order": "ASC" }
+      ]
+    },
+    {
+      "collectionGroup": "activity",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "createdBy", "order": "ASC" },
+        { "fieldPath": "seq", "order": "DESC" }
+      ]
     }
   ],
   "fieldOverrides": []

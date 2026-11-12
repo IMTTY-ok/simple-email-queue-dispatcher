@@ -1,4 +1,4 @@
-# Logs
+# ── Logs ───────────────────────────────────────────────────────────────────────
 logs
 *.log
 *.log.err
@@ -9,47 +9,59 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-# Dependencies
+# ── Dependencies ───────────────────────────────────────────────────────────────
 node_modules
 .pnp
 .pnp.js
 
-# Build output
+# ── Build output ───────────────────────────────────────────────────────────────
 dist
 dist-ssr
 build
 *.local
+*.tsbuildinfo
 
-# Environment / secrets
+# ── Environment files and secrets ──────────────────────────────────────────────
+# Every .env file is ignored, and the templates are explicitly kept.
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
+!**/.env.example
 *.pem
 *.key
+*.p12
+*.pfx
+*.jks
 *-service-account*.json
 *serviceAccount*.json
 gcloud-service-key.json
+firebase-adminsdk-*.json
 
-# Firebase
+# ── Firebase ───────────────────────────────────────────────────────────────────
 .firebase/
 firebase-debug.log
 firestore-debug.log
 ui-debug.log
 *-debug.log
 functions/lib/
+.emulator/
 
-# Coverage / test output
+# ── Coverage and test output ───────────────────────────────────────────────────
 coverage
 .nyc_output
+*.lcov
 
-# Editor directories and files
+# ── Editor directories and files ───────────────────────────────────────────────
 .vscode/*
 !.vscode/extensions.json
 .idea
+*.swp
 .DS_Store
 Thumbs.db
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
+Desktop.ini
+
+# ── OS-generated files ──────────────────────────────────────────────────────────
+$RECYCLE.BIN/
+*.lnk
+ehthumbs.db
+desktop.ini

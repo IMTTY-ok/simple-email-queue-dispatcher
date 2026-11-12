@@ -1,4 +1,5 @@
 import { initializeApp } from 'firebase/app';
+import { connectAuthEmulator, getAuth } from 'firebase/auth';
 import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
 import { getAnalytics } from 'firebase/analytics';
 
@@ -6,9 +7,12 @@ import { getAnalytics } from 'firebase/analytics';
  * Centralised Firebase initialisation.
  *
  * The web config is public by design — it only identifies the project and
- * grants read access to the collections the Firestore rules allow. Every
- * write goes through the Cloud Function, so the browser never needs write
- * permission (see `firestore.rules`).
+ * grants the read access the Firestore rules allow. Every write goes through
+ * the Cloud Function, so the browser never needs write permission (see
+ * `firestore.rules`).
+ *
+ * The web API key should still be restricted in the Google Cloud console
+ * (HTTP referrers + the Firebase APIs that are actually needed).
  */
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyB5K2NW97RQbeTELu7_c15RR-NUX8YO05c',
@@ -21,10 +25,21 @@ const firebaseConfig = {
 };
 
 export const app = initializeApp(firebaseConfig);
+
+/** Firebase Authentication — the dashboard requires a signed-in account. */
+export const auth = getAuth(app);
+
+/** Firestore — read-only from the browser; every write goes through the API. */
 export const db = getFirestore(app);
 
 if (import.meta.env.DEV) {
-  // local development: backend + database live in the Firebase Emulator Suite
+  // Local development: authentication, backend and database all live in the
+  // Firebase Emulator Suite. `connectAuthEmulator` has to run before the
+  // first auth call, and it may only be called once per session.
+  if (!auth.emulatorConfig) {
+    // The Firebase SDK needs the full URL, scheme included.
+    connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
+  }
   connectFirestoreEmulator(db, '127.0.0.1', 8080);
 }
 

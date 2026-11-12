@@ -26,19 +26,20 @@
 3. [The five modules](#3-the-five-modules)
 4. [Tech stack](#4-tech-stack)
 5. [Quick start — 5 minutes](#5-quick-start--5-minutes)
-6. [Configuration — what to fill in, and why](#6-configuration--what-to-fill-in-and-why)
-7. [How to use the dashboard](#7-how-to-use-the-dashboard)
-8. [Deploying](#8-deploying)
-9. [Project structure](#9-project-structure)
-10. [How the dispatcher works](#10-how-the-dispatcher-works)
-11. [API reference](#11-api-reference)
-12. [Data model](#12-data-model)
-13. [Testing](#13-testing)
-14. [Scripts](#14-scripts)
-15. [Troubleshooting](#15-troubleshooting)
-16. [Security](#16-security)
-17. [Contributing](#17-contributing)
-18. [License](#18-license)
+6. [Accounts and roles](#6-accounts-and-roles)
+7. [Configuration — what to fill in, and why](#7-configuration--what-to-fill-in-and-why)
+8. [How to use the dashboard](#8-how-to-use-the-dashboard)
+9. [Deploying](#9-deploying)
+10. [Project structure](#10-project-structure)
+11. [How the dispatcher works](#11-how-the-dispatcher-works)
+12. [API reference](#12-api-reference)
+13. [Data model](#13-data-model)
+14. [Testing](#14-testing)
+15. [Scripts](#15-scripts)
+16. [Troubleshooting](#16-troubleshooting)
+17. [Security](#17-security)
+18. [Contributing](#18-contributing)
+19. [License](#19-license)
 
 ---
 
@@ -201,12 +202,14 @@ That single command starts **two** things side by side:
 
 The Vite dev server proxies `/api/*` to the emulator, so **you need no
 environment variables for local development**. Open
-<http://localhost:5173> and you should see the dashboard with a green
-**Server** badge.
+<http://localhost:5173> and you should see the sign-in screen. Register the
+first account — it becomes the administrator — and the dashboard appears
+with a green **Server** badge. See
+[Accounts and roles](#6-accounts-and-roles).
 
 > The emulator needs a moment on first run while it downloads the Firestore
 > binary. If the function fails to appear, see
-> [Troubleshooting](#15-troubleshooting).
+> [Troubleshooting](#16-troubleshooting).
 
 ### Try it in 30 seconds
 
@@ -215,15 +218,71 @@ environment variables for local development**. Open
 3. Watch the **Activity Log** — every transition is logged live.
 
 Nothing was really sent, because the demo project runs in **dry-run** mode. See
-[How to use the dashboard](#7-how-to-use-the-dashboard) to send real email.
+[How to use the dashboard](#8-how-to-use-the-dashboard) to send real email.
+
+### See the retry engine work
+
+1. In **SMTP Dispatcher Settings**, enable **Dry-run** and pick
+   **Force Failure**, then **Save Config**.
+2. **Load Demo Data** and **Start**.
+3. Each email fails four times (1 attempt + 3 retries) and ends as `FAILED`,
+   with every attempt listed in the Processing panel and the Activity Log.
 
 ---
 
-## 6. Configuration — what to fill in, and why
+## 6. Accounts and roles
+
+The dashboard is **not** an anonymous application. You sign in with a Firebase
+Authentication account (email + password) before the queue is reachable at all,
+and the access model has two roles.
+
+| Role | May do |
+| --- | --- |
+| **Administrator** | Everything — SMTP configuration, connection tests, account management, the whole queue |
+| **Operator** | Day-to-day use — enqueue, remove, dispatch, and read **their own** emails and activity |
+
+### How the role is decided
+
+- The **first account ever created** on an installation becomes the
+  administrator. Every later account is an operator.
+- The decision is made on the server, inside a transaction. A browser cannot
+  promote itself — not through the API and not through the Firestore rules.
+- An administrator can promote or demote other accounts from the
+  **Accounts & Roles** panel in the dashboard. Nobody can change their own
+  role, so an installation can never be locked out of its own configuration.
+
+### Creating the first account
+
+1. Start the app: `npm run dev`
+2. Open <http://localhost:5173> — the sign-in screen appears
+3. Click **Create account** and register any email and password
+4. That account is now the administrator
+
+> In the Firebase console (production) enable **Authentication → Sign-in
+> method → Email/Password**. The emulator needs no configuration.
+
+### What the roles change in the interface
+
+- An **operator** does not see the *SMTP Dispatcher Settings* panel at all — the
+  SMTP mailbox and sender identity are administrator-only — and does not see
+  the *Accounts & Roles* panel.
+- An **operator** only sees the emails and activity they created.
+- Both roles can enqueue, remove, dispatch, read the statistics and export a report.
+
+### If you lock yourself out
+
+The administrator role is stored in Firestore under `users/<uid>`. You can
+promote an account from the Firebase console, or delete the `_meta/bootstrap`
+sentinel document and register again — the next account created becomes the
+administrator.
+
+---
+
+## 7. Configuration — what to fill in, and why
 
 Everything configurable lives in exactly two places, plus one file you edit once.
 
-### 6.1 `.firebaserc` — which Firebase project you use
+### 7.1 `.firebaserc` — which Firebase project you use
 
 ```json
 {
@@ -239,7 +298,7 @@ Everything configurable lives in exactly two places, plus one file you edit once
 
 Leave it as-is to use the bundled demo project.
 
-### 6.2 `.env.local` — the dashboard (browser side)
+### 7.2 `.env.local` — the dashboard (browser side)
 
 Copy the template and fill it in:
 
@@ -262,7 +321,7 @@ cp .env.example .env.local
 > Everything prefixed with `VITE_` is compiled into the browser bundle in plain
 > text.
 
-### 6.3 `functions/.env` — the backend (server side)
+### 7.3 `functions/.env` — the backend (server side)
 
 ```bash
 cp functions/.env.example functions/.env
@@ -286,7 +345,7 @@ The emulator reads this file automatically. `functions/.env` is gitignored.
 | `SIMULATION_MODE` | optional | `AUTOMATIC`, `FORCE_SUCCESS` or `FORCE_FAILURE` | Only used while dry-run is on. `FORCE_FAILURE` is how you demonstrate the retry engine without breaking a real mailbox. |
 | `ALLOWED_ORIGIN` | **for deployments** | `https://your-frontend.example.com` | Which browser origins may change state. See below — this one bites. |
 
-### 6.4 `ALLOWED_ORIGIN` — the one setting people get wrong
+### 7.4 `ALLOWED_ORIGIN` — the one setting people get wrong
 
 State-changing requests (`POST`, `PUT`, `PATCH`, `DELETE`) are refused with
 **403** unless the browser's `Origin` header is in the allowlist. Reads are
@@ -302,19 +361,19 @@ always open.
 Start / Save / Add do nothing and the banner shows *"Origin not allowed"*. Fix
 `ALLOWED_ORIGIN` on the function and reload.
 
-### 6.5 `firebase.json`, `firestore.rules`, `firestore.indexes.json`
+### 7.5 `firebase.json`, `firestore.rules`, `firestore.indexes.json`
 
 These are committed and need no editing to run locally.
 
 | File | What it does | Why it matters |
 | --- | --- | --- |
 | `firebase.json` | Points the CLI at `functions/`, the rules and the indexes, and declares the emulator ports | The single place that ties the project together |
-| `firestore.rules` | The browser may only **read**; every write goes through the Cloud Function. `_secrets/*` is denied to browsers entirely | This is why the SMTP password can never leak into the client. It is also the app's main security boundary — read the [Security](#16-security) section |
+| `firestore.rules` | The browser may only **read**; every write goes through the Cloud Function. `_secrets/*` is denied to browsers entirely | This is why the SMTP password can never leak into the client. It is also the app's main security boundary — read the [Security](#17-security) section |
 | `firestore.indexes.json` | The composite index the FIFO query needs (`status` + `seq`) | Without it Firestore rejects the "next queued email" query |
 
 ---
 
-## 7. How to use the dashboard
+## 8. How to use the dashboard
 
 ### The header
 
@@ -382,7 +441,7 @@ detail of every attempt.
 
 ---
 
-## 8. Deploying
+## 9. Deploying
 
 ### The backend
 
@@ -420,7 +479,7 @@ Firebase Hosting, GitHub Pages or any web server.
 
 ---
 
-## 9. Project structure
+## 10. Project structure
 
 ```
 simple-email-queue-dispatcher/
@@ -459,16 +518,20 @@ simple-email-queue-dispatcher/
 │   │       └── utils/exportReport.ts      # CSV / JSON serialisation
 │   │
 │   └── shared/                            # used by more than one module
-│       ├── api/client.ts                  # apiUrl() + the JSON fetch helper
-│       ├── components/Header.tsx          # app chrome + dispatch controls
-│       ├── constants.ts                   # ports, simulation modes, demo data
-│       ├── hooks/
-│       │   ├── useDashboardData.ts        # the Firestore realtime listeners
-│       │   └── useEmailDispatcher.ts      # wires the state to the five modules
-│       ├── lib/firebase.ts                # centralised Firebase initialisation
-│       ├── mappers.ts                     # Firestore/REST → domain types
-│       ├── types/email.ts                 # the shared domain model
-│       └── utils/format.ts                # formatting + validation helpers
+│   └──     api/client.ts                  # apiUrl() + the authenticated fetch helper
+│   └──     auth/useAuth.ts                # sign in / sign up + the server-side role
+│   └──     components/
+│   └──         AdminPanel.tsx           # account & role management (admin only)
+│   └──         Header.tsx              # app chrome + dispatch controls
+│   └──         LoginScreen.tsx        # the sign-in / sign-up screen
+│   └──     constants.ts                   # ports, simulation modes, demo data, roles
+│   └──     hooks/
+│   └──         useDashboardData.ts        # the Firestore realtime listeners
+│   └──         useEmailDispatcher.ts      # wires the state to the five modules
+│   └──     lib/firebase.ts                # centralised Firebase initialisation
+│   └──     mappers.ts                     # Firestore/REST -> domain types
+│   └──     types/email.ts                 # the shared domain model
+│   └──     utils/format.ts                # formatting + validation helpers
 │
 ├── functions/                             # Backend (Cloud Functions)
 │   ├── index.js                           # HTTPS bootstrap, CORS, rate limit
@@ -482,11 +545,13 @@ simple-email-queue-dispatcher/
 │       │   ├── module-4-final-status-logger/logger.js
 │       │   └── module-5-summary-exporter/summary.js
 │       └── shared/
+│           ├──  auth.js                    # token verification + role resolution
 │           ├── config.js                  # env + Firestore config layering
 │           ├── http.js                    # ok / fail / async handler wrapper
 │           └── store.js                   # Firestore data-access layer
 │
 ├── tests/                                 # unit tests, one file per module
+├──  tests/rules/                           # Firestore security-rule tests
 ├── scripts/
 │   ├── integration-check.mjs              # end-to-end check against the emulator
 │   ├── browser_check.py                   # browser smoke test + screenshots
@@ -494,7 +559,8 @@ simple-email-queue-dispatcher/
 │
 ├── docs/screenshots/                      # the images used above
 │
-├── firestore.rules                        # browser: read-only, writes denied
+├──  firestore.rules                        # deny-by-default; ownership + role checks
+├──  SECURITY.md                             # security model and reporting guide
 ├── firestore.indexes.json                 # composite index for the FIFO query
 ├── firebase.json                          # functions + rules + emulator ports
 ├── .firebaserc                            # which Firebase project to use
@@ -504,7 +570,7 @@ simple-email-queue-dispatcher/
 
 ---
 
-## 10. How the dispatcher works
+## 11. How the dispatcher works
 
 ```
 claim the dispatch lease                 (only one live pass at a time)
@@ -542,7 +608,7 @@ Two details worth knowing:
 
 ---
 
-## 11. API reference
+## 12. API reference
 
 All endpoints live under the Cloud Function base URL.
 
@@ -574,11 +640,11 @@ curl -X POST http://127.0.0.1:5001/email-dispatcher-43118/us-central1/backend/ap
 ```
 
 > The `Origin` header is required for every state-changing call — that is the
-> origin guard described in [6.4](#64-allowed_origin--the-one-setting-people-get-wrong).
+> origin guard described in [7.4](#74-allowed_origin--the-one-setting-people-get-wrong).
 
 ---
 
-## 12. Data model
+## 13. Data model
 
 ```typescript
 interface Email {
@@ -614,11 +680,12 @@ Firestore layout:
 
 ---
 
-## 13. Testing
+## 14. Testing
 
 ```bash
 npm test                      # 40 unit tests, one file per module
-npm run test:integration      # 62 assertions against the running emulator
+npm run test:rules            # 36 Firestore security-rule tests (needs the emulator)
+npm run test:integration      # 91 assertions against the running emulator
 npm run lint                  # oxlint over src, functions, tests and scripts
 npm run typecheck             # tsc -b
 ```
@@ -627,12 +694,20 @@ The unit tests cover the pure logic of each module: the queue validation rules,
 the three simulation modes and the dry-run transport, the attempt budget and
 progress maths, the status → counter mapping, and the CSV/JSON exporters.
 
-The integration check exercises all five modules over the real HTTP API against
-the emulator — including the failure/retry path, pause/resume, email removal and
-the origin guard.
+The **rules tests** prove the access model against the emulator: an anonymous
+visitor cannot read the queue, the activity log, the configuration or the
+dispatcher state; an operator can read their own entries but not somebody
+else's, and cannot read the SMTP configuration or promote themselves; an
+administrator can read everything except the stored secrets; and nobody can
+write to Firestore directly.
+
+The **integration check** exercises all five modules over the real HTTP API
+against the emulator — including the failure/retry path, pause/resume, email
+removal, the origin guard and the role separation.
 
 ```bash
-npm run dev                   # in one terminal
+npm run dev                   # in one terminal (auth + functions + firestore)
+npm run test:rules            # in another
 npm run test:integration      # in another
 ```
 
@@ -640,13 +715,13 @@ Two optional browser checks (they need `pip install playwright` and
 `playwright install chromium`):
 
 ```bash
-python scripts/browser_check.py     # renders the dashboard, captures the screenshots
+python scripts/browser_check.py     # signs in, renders the dashboard, captures screenshots
 python scripts/responsive_check.py  # layout + accessibility sweep over 4 breakpoints
 ```
 
 ---
 
-## 14. Scripts
+## 15. Scripts
 
 | Script | Purpose |
 | --- | --- |
@@ -658,58 +733,68 @@ python scripts/responsive_check.py  # layout + accessibility sweep over 4 breakp
 | `npm run typecheck` | TypeScript project build (types only) |
 | `npm run lint` | oxlint |
 | `npm test` | unit tests |
+| `npm run test:rules` | Firestore security-rule tests (needs the emulator) |
 | `npm run test:integration` | end-to-end check against the emulator |
 | `npm run preview` | preview the production build |
 
 ---
 
-## 15. Troubleshooting
+## 16. Troubleshooting
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
 | *"Dispatcher data source unreachable"* banner | The emulators are not running | Run `npm run dev` (not `npm run dev:web` alone) and wait for *"All emulators ready"* |
+| *"Wrong email or password"* on sign-in | The account does not exist yet, or the Auth emulator is not running | Switch to **Create account** and register, or start the emulators with `npm run dev:emulators` |
+| *"Origin not allowed"* | The browser origin is not in `ALLOWED_ORIGIN` | See [7.4](#74-allowed_origin--the-one-setting-people-get-wrong) |
+| *"Insufficient permissions"* | An operator tried an administrator-only action | Sign in as an administrator |
+| The SMTP settings panel is missing | You are signed in as an operator | Only administrators can read the SMTP configuration |
+| *"Too many requests"* | The rate limit for state-changing requests was reached | Wait a minute, or raise `RATE_LIMIT_MAX` on the function |
 | *"Function us-central1-backend does not exist"* | The function failed to load on first run — the emulator gave up after 10 s while downloading its runtime | Stop everything and start again; the first run is slow, later runs are not. `FUNCTIONS_DISCOVERY_TIMEOUT=300` is already set by `npm run dev:emulators` |
 | *"Could not start Firestore Emulator, port taken"* | Another process holds port 8080 | Close the other emulator (`firebase emulators:stop`) or change the port in `firebase.json` |
-| *"Origin not allowed"* | The browser's origin is not in `ALLOWED_ORIGIN` | See [6.4](#64-allowed_origin--the-one-setting-people-get-wrong) |
+| *"Origin not allowed"* | The browser's origin is not in `ALLOWED_ORIGIN` | See [7.4](#74-allowed_origin--the-one-setting-people-get-wrong) |
 | The dashboard loads but Start does nothing | Same as above — reads work, writes are refused | Fix `ALLOWED_ORIGIN` |
 | *"SMTP is not configured"* when pressing Start | Dry-run is off and no host is set | Fill in the SMTP settings, or tick **Dry-run** |
 | *"No emails in the queue"* | The queue is empty | Add an email or press **Load Demo Data** |
 | *"Please enter a valid email address."* | The recipient failed validation | Use a full address, e.g. `student@example.com` |
 | Emails always fail with `535` / `535 5.7.8` | The provider rejects the login | You are most likely using your account password — generate an **app password** |
-| The git history shows the demo project's data | `firestore.rules` allows anonymous reads | See [Security](#16-security) before putting real recipients in the queue |
+| The git history shows the demo project's data | `firestore.rules` allows anonymous reads | See [Security](#17-security) before putting real recipients in the queue |
 
 ---
 
-## 16. Security
+## 17. Security
 
+- **The dashboard requires an account.** Anonymous visitors cannot read the
+  queue, the activity log, the statistics, the dispatcher state or the SMTP
+  configuration. See [Accounts and roles](#6-accounts-and-roles).
 - **The SMTP password never reaches the browser.** It lives in Firestore under
   `_secrets/main`, which the Firestore rules deny to browsers, or in a Firebase
   secret. The API only ever returns a `hasPassword` boolean.
 - **Only the Cloud Function writes.** The browser is read-only in Firestore, and
   the rules deny every unmatched path.
+- **Every API call is authenticated.** The Firebase ID token is verified on the
+  server and the caller's role is read from Firestore — never from the request.
 - **State-changing requests must come from an allowed origin.** `POST`, `PUT`,
   `PATCH` and `DELETE` are refused with `403` unless the `Origin` header is in
   the `ALLOWED_ORIGIN` allowlist. This stops a third-party website from driving
   the dispatcher through a visitor's browser.
-- **Rate limiting** — 60 state-changing requests per minute per IP.
+- **Rate limiting** — 120 state-changing requests per minute per IP by default
+  (`RATE_LIMIT_MAX`).
 - **Payload limits** — request bodies are capped at 100 kB and a batch may hold
   at most 100 emails.
-- **No secrets in the repository.** `.env`, `*.pem`, `*key*` and service-account
+- **No secrets in the repository.** `.env`, `*.pem`, `*.key` and service-account
   files are all in `.gitignore`.
 - **The Firebase web configuration is public by design** — it identifies the
   project and is readable from the shipped JavaScript. The security boundary is
-  the Firestore rules, not the API key. Set `VITE_FIREBASE_*` to use your own
-  project.
+  the Firestore rules and the API's own authorization, not the API key. Set
+  `VITE_FIREBASE_*` to use your own project, and restrict the API key by HTTP
+  referrer in the Google Cloud console.
 
-> **Before using this with real recipients:** the dashboard currently reads the
-> queue anonymously, so anyone who knows the project id can read the queued
-> email content. Enable Firebase Authentication and change
-> `allow read: if true` to `allow read: if request.auth != null` in
-> `firestore.rules` if that matters to you.
+The full security model — rules, roles, secret handling and how to report a
+vulnerability — is in [`SECURITY.md`](SECURITY.md).
 
 ---
 
-## 17. Contributing
+## 18. Contributing
 
 Contributions are welcome.
 
@@ -735,7 +820,7 @@ credential.
 
 ---
 
-## 18. License
+## 19. License
 
 MIT — free to use for educational purposes. See [LICENSE](LICENSE).
 

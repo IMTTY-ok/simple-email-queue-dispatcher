@@ -40,9 +40,26 @@ const originList = allowedOrigins.length > 0 ? allowedOrigins : DEFAULT_ORIGINS;
 /** Methods that change state. They must come from an allowed browser origin. */
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
-/** Simple per-IP token bucket: 60 mutating requests per minute. */
-const RATE_LIMIT = { windowMs: 60_000, max: 60 };
+/**
+ * Simple per-IP token bucket for the state-changing endpoints.
+ *
+ * The dashboard's dispatch pump alone calls `/api/dispatch/continue` roughly
+ * every two seconds, so the limit has to leave room for that on top of a
+ * person clicking around. It is configurable so a busy deployment can raise
+ * it without a code change.
+ */
+const RATE_LIMIT = {
+  windowMs: clampInt(process.env.RATE_LIMIT_WINDOW_MS, 60_000, 1000, 3_600_000),
+  max: clampInt(process.env.RATE_LIMIT_MAX, 120, 10, 10_000),
+};
 const rateBuckets = new Map();
+
+/** Parse an integer environment variable, falling back when it is unusable. */
+function clampInt(value, fallback, min, max) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, Math.trunc(n)));
+}
 
 function rateLimited(ip) {
   const now = Date.now();

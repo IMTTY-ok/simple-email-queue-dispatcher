@@ -4,6 +4,7 @@ import { useQueueActions } from '../../modules/module-1-email-queue-creator/hook
 import { useSimulatorConfig } from '../../modules/module-2-send-simulator/hooks/useSimulatorConfig';
 import { useDispatchControls } from '../../modules/module-3-retry-logic/hooks/useDispatchControls';
 import type { Email, ServerConfig } from '../types/email';
+import type { Role } from '../auth/useAuth';
 
 /**
  * The dashboard's single orchestration hook.
@@ -20,8 +21,8 @@ import type { Email, ServerConfig } from '../types/email';
  * goes through the Cloud Function, which is the only writer the Firestore
  * rules allow.
  */
-export function useEmailDispatcher() {
-  const { state, setState } = useDashboardData();
+export function useEmailDispatcher(uid: string | null, role: Role | null) {
+  const { state, setState } = useDashboardData(uid, role);
 
   const applyConfig = useCallback((config: ServerConfig) => {
     setState((p) => ({ ...p, config }));

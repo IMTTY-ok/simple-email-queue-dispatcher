@@ -1,15 +1,32 @@
-import { Play, Pause, RotateCcw, Mail, Activity, Zap } from 'lucide-react';
+import { Play, Pause, RotateCcw, Mail, Activity, Zap, LogOut, ShieldCheck } from 'lucide-react';
 
 interface HeaderProps {
   isProcessing: boolean;
   isPaused: boolean;
   connected: boolean;
+  accountLabel: string;
+  roleLabel: string;
   onStart: () => void;
   onPause: () => void;
   onReset: () => void;
+  onSignOut: () => void;
 }
 
-export function Header({ isProcessing, isPaused, connected, onStart, onPause, onReset }: HeaderProps) {
+/**
+ * The application chrome: identity on the left, live status in the middle,
+ * the dispatcher controls on the right.
+ */
+export function Header({
+  isProcessing,
+  isPaused,
+  connected,
+  accountLabel,
+  roleLabel,
+  onStart,
+  onPause,
+  onReset,
+  onSignOut,
+}: HeaderProps) {
   return (
     <header className="sticky top-0 z-50 border-b border-white/[0.06]"
       style={{ background: 'rgba(8,11,18,0.85)', backdropFilter: 'blur(20px) saturate(180%)' }}
@@ -18,11 +35,11 @@ export function Header({ isProcessing, isPaused, connected, onStart, onPause, on
       <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-blue-500/40 to-transparent" />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
+        <div className="flex items-center justify-between h-16 gap-3">
 
           {/* Logo / Title */}
-          <div className="flex items-center gap-3">
-            <div className="relative">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="relative shrink-0">
               <div className="w-9 h-9 rounded-xl flex items-center justify-center"
                 style={{ background: 'linear-gradient(135deg, #2563eb, #7c3aed)' }}
               >
@@ -32,16 +49,16 @@ export function Header({ isProcessing, isPaused, connected, onStart, onPause, on
                 <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-blue-400 rounded-full animate-pulse-dot border-2 border-gray-950" />
               )}
             </div>
-            <div>
-              <h1 className="font-bold text-base sm:text-lg leading-tight tracking-tight text-white">
+            <div className="min-w-0">
+              <h1 className="font-bold text-base sm:text-lg leading-tight tracking-tight text-white truncate">
                 Email Queue Dispatcher
               </h1>
-              <p className="text-gray-500 text-xs leading-tight">Real SMTP Dispatch &amp; Queue Retry</p>
+              <p className="text-gray-500 text-xs leading-tight truncate">Real SMTP Dispatch &amp; Queue Retry</p>
             </div>
           </div>
 
           {/* Server connection pill */}
-          <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full border"
+          <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full border shrink-0"
             style={{
               border: connected ? '1px solid rgba(52,211,153,0.25)' : '1px solid rgba(248,113,113,0.25)',
               background: connected ? 'rgba(5,46,22,0.35)' : 'rgba(69,10,10,0.35)',
@@ -55,7 +72,7 @@ export function Header({ isProcessing, isPaused, connected, onStart, onPause, on
           </div>
 
           {/* Center status pill */}
-          <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full border border-white/[0.07]"
+          <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full border border-white/[0.07] shrink-0"
             style={{ background: 'rgba(15,20,30,0.6)' }}
           >
             {isProcessing && !isPaused ? (
@@ -78,7 +95,7 @@ export function Header({ isProcessing, isPaused, connected, onStart, onPause, on
           </div>
 
           {/* Controls */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             {!isProcessing || isPaused ? (
               <button
                 onClick={onStart}
@@ -112,6 +129,32 @@ export function Header({ isProcessing, isPaused, connected, onStart, onPause, on
               <RotateCcw className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Reset</span>
             </button>
+
+            {/* Signed-in account */}
+            <div
+              className="flex items-center gap-2 pl-2 sm:pl-3 ml-1 border-l border-white/[0.07]"
+              title={`Signed in as ${accountLabel} (${roleLabel})`}
+            >
+              <div className="hidden xl:flex flex-col items-end leading-tight">
+                <span className="text-xs font-medium text-gray-300 max-w-[150px] truncate">
+                  {accountLabel}
+                </span>
+                <span className="text-[10px] uppercase tracking-wider flex items-center gap-1" style={{ color: '#4b5563' }}>
+                  <ShieldCheck className="w-3 h-3" />
+                  {roleLabel}
+                </span>
+              </div>
+              <button
+                onClick={onSignOut}
+                className="btn flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-gray-400 text-xs font-medium border border-white/[0.08]"
+                style={{ background: 'rgba(255,255,255,0.05)' }}
+                title={`Sign out (${roleLabel})`}
+                aria-label="Sign out"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span className="hidden xl:inline">Sign out</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
