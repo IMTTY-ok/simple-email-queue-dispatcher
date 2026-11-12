@@ -72,11 +72,6 @@ retried up to a configurable limit before it is marked `FAILED`.
 | ![Dashboard](docs/screenshots/dashboard.png) | ![Desktop](docs/screenshots/desktop.png) | ![Retrying](docs/screenshots/dispatch-retrying.png) |
 | Live counters, the dry-run/live banner, and the whole board | FRONT → REAR queue, per-attempt badges | The retry engine working through a failed attempt |
 
-| Activity log | Dispatch summary & export | Phone width |
-| --- | --- | --- |
-| ![Activity log](docs/screenshots/activity-log.png) | ![Dispatch finished](docs/screenshots/dispatch-finished.png) | ![Mobile](docs/screenshots/mobile.png) |
-| Every transition, colour-coded and timestamped | Statistics, results table, CSV/JSON export | The same dashboard at 390 px |
-
 More captures live in [`docs/screenshots/`](docs/screenshots/).
 
 ---
