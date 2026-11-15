@@ -220,8 +220,9 @@ export function ScheduledEmailsPanel({
         </div>
       </header>
 
-      {/* Filters */}
-      <div className="px-3 pt-3 pb-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+      {/* Filters — `items-end` lines the search and status controls up with the
+          date pickers below them, which carry a label above the field. */}
+      <div className="px-3 pt-3 pb-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 items-end">
         <div className="relative">
           <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-faint pointer-events-none" />
           <input
