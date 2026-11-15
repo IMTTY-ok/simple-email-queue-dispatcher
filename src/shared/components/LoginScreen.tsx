@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Mail, Lock, LogIn, UserPlus, AlertTriangle, ShieldCheck } from 'lucide-react';
+import { Mail, Lock, LogIn, UserPlus, AlertTriangle, ShieldCheck, Eye, EyeOff } from 'lucide-react';
 
 interface LoginScreenProps {
   onSignIn: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
@@ -18,6 +18,7 @@ export function LoginScreen({ onSignIn, onSignUp, error }: LoginScreenProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
 
@@ -92,6 +93,7 @@ export function LoginScreen({ onSignIn, onSignUp, error }: LoginScreenProps) {
                     onClick={() => {
                       setMode(tab.id);
                       setLocalError(null);
+                      setShowPassword(false);
                     }}
                     aria-pressed={active}
                     className="segment-btn flex items-center justify-center gap-2"
@@ -154,14 +156,24 @@ export function LoginScreen({ onSignIn, onSignUp, error }: LoginScreenProps) {
                   <Lock className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-faint pointer-events-none" />
                   <input
                     id="auth-password"
-                    type="password"
+                    type={showPassword ? 'text' : 'password'}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
                     autoComplete={isSignUp ? 'new-password' : 'current-password'}
                     aria-required="true"
-                    className="input pl-8"
+                    className="input pl-8 pr-10"
                   />
+                  <button
+                    type="button"
+                    className="affix-toggle"
+                    onClick={() => setShowPassword((shown) => !shown)}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    aria-pressed={showPassword}
+                    title={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
                 </div>
               </div>
 

@@ -1,3 +1,10 @@
+/* Layer order is declared up front so it is fixed no matter which layer
+   happens to be emitted first: base → components → utilities.
+   The component classes below live in the `components` layer, which means a
+   Tailwind utility on the same element (e.g. `pl-8` on an `.input`) wins —
+   unlayered CSS would silently beat every utility and break the spacing. */
+@layer base, components, utilities;
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -91,6 +98,8 @@ body {
 /* ═══════════════════════════════════════════════════════════════════════════
    Components
    ═══════════════════════════════════════════════════════════════════════════ */
+
+@layer components {
 
 /* ── Card ───────────────────────────────────────────────────────────────── */
 .card {
@@ -226,6 +235,33 @@ body {
 .input-invalid:focus { box-shadow: 0 0 0 3px rgba(178, 69, 69, 0.14); }
 
 .field-error { margin: 4px 0 0; font-size: 11.5px; color: var(--red); }
+
+/* ── Input affixes ──────────────────────────────────────────────────────── */
+/* A trailing toggle (show password) that sits inside the field. The button is
+   centred on the control and the field reserves room for it with `pr-10`. */
+.affix-toggle {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.affix-toggle:hover { background: var(--slate-soft); color: var(--navy-900); }
+.affix-toggle:focus-visible {
+  outline: 2px solid var(--navy-500);
+  outline-offset: -1px;
+}
 
 /* ── Badges ─────────────────────────────────────────────────────────────── */
 .badge {
@@ -453,6 +489,8 @@ body {
 .scroll-y { overflow-y: auto; overscroll-behavior: contain; }
 
 /* ── Reduced motion ─────────────────────────────────────────────────────── */
+}
+
 /* Users who ask the OS to reduce motion get a still dashboard: no pulsing
    dots, no spinning retry icons, no sliding log entries. */
 @media (prefers-reduced-motion: reduce) {

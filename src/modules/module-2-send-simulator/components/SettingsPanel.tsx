@@ -113,7 +113,7 @@ export function SettingsPanel({
     }
     // The server is the single source of truth. If the dry-run switch or the
     // simulation mode changed elsewhere (another panel, another tab, the
-    // server itself), follow it ΓÇö unless the user is mid-edit right here.
+    // server itself), follow it — unless the user is mid-edit right here.
     if (!dryRunTouchedRef.current) setDryRun(config.dryRun ?? false);
     if (!simModeTouchedRef.current) setSimulationMode(config.simulationMode ?? 'AUTOMATIC');
   }, [config]);
@@ -140,7 +140,7 @@ export function SettingsPanel({
       // Only send the simulation fields when this panel actually renders
       // them. The transport variant hides the dry-run switch, so sending its
       // invisible copy would silently undo a change made in the simulation
-      // card ΓÇö the config would flip back to dry-run behind the user's back.
+      // card — the config would flip back to dry-run behind the user's back.
       ...(showSimulation ? { dryRun, simulationMode } : {}),
     });
     setBusy(null);
@@ -366,9 +366,11 @@ export function SettingsPanel({
               />
               <button
                 type="button"
+                className="affix-toggle"
                 onClick={() => setShowPass((s) => !s)}
-                className="absolute right-1 top-1/2 -translate-y-1/2 p-2 rounded-control text-ink-muted hover:bg-[#EEF2F7] transition-colors"
                 aria-label={showPass ? 'Hide password' : 'Show password'}
+                aria-pressed={showPass}
+                title={showPass ? 'Hide password' : 'Show password'}
               >
                 {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
