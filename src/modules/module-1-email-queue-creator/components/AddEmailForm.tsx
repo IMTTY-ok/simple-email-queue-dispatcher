@@ -1,9 +1,30 @@
 import { useState } from 'react';
-import { PlusCircle, X, CheckCircle, AlertCircle, AtSign, Type, MessageSquare, User } from 'lucide-react';
-import type { EmailFormData } from '../../../shared/types/email';
+import {
+  PlusCircle,
+  X,
+  CheckCircle,
+  AlertCircle,
+  AtSign,
+  Type,
+  MessageSquare,
+  User,
+  Send,
+  CalendarClock,
+  Loader2,
+} from 'lucide-react';
+import type { EmailFormData, ScheduleResult } from '../../../shared/types/email';
+import { SchedulePanel } from '../../module-6-scheduled-delivery/components/SchedulePanel';
 
 interface AddEmailFormProps {
   onAdd: (form: EmailFormData) => Promise<{ success: boolean; error?: string; emailId?: string; position?: number }>;
+  /** Queue the email and start the dispatcher right away. */
+  onSendNow: (form: EmailFormData) => Promise<{ success: boolean; error?: string; emailId?: string }>;
+  /** Save the email as a scheduled delivery. */
+  onSchedule: (
+    form: EmailFormData,
+    scheduledAt: string,
+    timezone: string
+  ) => Promise<ScheduleResult>;
   disabled?: boolean;
 }
 
@@ -25,18 +46,15 @@ interface FieldProps {
 }
 
 function Field({ id, label, required, icon, type, placeholder, rows, value, error, disabled, onChange, onBlur }: FieldProps) {
-  const baseClass = `input-field w-full rounded-xl px-3 py-2.5 text-sm text-gray-200 placeholder-gray-700 focus:outline-none disabled:opacity-50 transition-all`;
-  const style = {
-    background: 'rgba(255,255,255,0.04)',
-    border: error ? '1px solid rgba(239,68,68,0.5)' : '1px solid rgba(255,255,255,0.08)',
-  };
+  const className = `input ${error ? 'input-invalid' : ''}`;
+  const describedBy = error ? `${String(id)}-error` : undefined;
 
   return (
     <div>
-      <label htmlFor={String(id)} className="flex items-center gap-1.5 text-xs text-gray-500 mb-1.5 font-medium">
-        <span className="text-gray-700">{icon}</span>
+      <label htmlFor={String(id)} className="field-label flex items-center gap-1.5">
+        <span className="text-ink-faint">{icon}</span>
         {label}
-        {required && <span className="text-red-500">*</span>}
+        {required && <span style={{ color: '#B24545' }}>*</span>}
       </label>
       {rows ? (
         <textarea
@@ -47,8 +65,9 @@ function Field({ id, label, required, icon, type, placeholder, rows, value, erro
           onBlur={onBlur}
           placeholder={placeholder}
           disabled={disabled}
-          className={`${baseClass} resize-none`}
-          style={style}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={describedBy}
+          className={`${className} resize-none`}
         />
       ) : (
         <input
@@ -59,20 +78,33 @@ function Field({ id, label, required, icon, type, placeholder, rows, value, erro
           onBlur={onBlur}
           placeholder={placeholder}
           disabled={disabled}
-          className={baseClass}
-          style={style}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={describedBy}
+          className={className}
         />
       )}
       {error && (
-        <p className="text-xs mt-1 animate-fade-up" style={{ color: '#f87171' }}>{error}</p>
+        <p id={`${String(id)}-error`} className="field-error">
+          {error}
+        </p>
       )}
     </div>
   );
 }
 
-export function AddEmailForm({ onAdd, disabled }: AddEmailFormProps) {
+/**
+ * Module 1 — Email Queue Creator.
+ *
+ * The composer writes an email into the queue. Three ways out:
+ *
+ *   • **ADD TO QUEUE** — the email waits in the FIFO queue.
+ *   • **SEND NOW** — the email is queued and the dispatcher starts at once.
+ *   • **SCHEDULE FOR LATER** — the email is saved as a scheduled delivery and
+ *     the server sends it at the chosen moment (Module 6).
+ */
+export function AddEmailForm({ onAdd, onSendNow, onSchedule, disabled }: AddEmailFormProps) {
   const [form, setForm] = useState<EmailFormData>(EMPTY_FORM);
-  const [submitting, setSubmitting] = useState(false);
+  const [submitting, setSubmitting] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{
     type: 'success' | 'error';
     message: string;
@@ -80,8 +112,9 @@ export function AddEmailForm({ onAdd, disabled }: AddEmailFormProps) {
     position?: number;
   } | null>(null);
   const [touched, setTouched] = useState<Record<string, boolean>>({});
+  const [scheduleOpen, setScheduleOpen] = useState(false);
 
-  const isDisabled = disabled || submitting;
+  const isDisabled = disabled || submitting !== null;
 
   const handleChange = (field: keyof EmailFormData, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -99,65 +132,110 @@ export function AddEmailForm({ onAdd, disabled }: AddEmailFormProps) {
     return null;
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  /** Validate the whole form and return the first problem, or `null`. */
+  const validateForm = (): string | null => {
     setTouched({ recipient: true, subject: true, message: true });
-    setSubmitting(true);
+    if (!form.recipient.trim()) return 'Recipient email is required.';
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.recipient.trim())) {
+      return 'Please enter a valid email address.';
+    }
+    if (!form.subject.trim()) return 'Subject is required.';
+    if (!form.message.trim()) return 'Message is required.';
+    return null;
+  };
+
+  /** Empty the form. The feedback is kept unless the caller says otherwise. */
+  const resetForm = (clearFeedback = true) => {
+    setForm(EMPTY_FORM);
+    if (clearFeedback) setFeedback(null);
+    setTouched({});
+  };
+
+  const handleAdd = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const problem = validateForm();
+    if (problem) {
+      setFeedback({ type: 'error', message: problem });
+      return;
+    }
+    setSubmitting('add');
     const result = await onAdd(form);
-    setSubmitting(false);
+    setSubmitting(null);
     if (result.success) {
-      setFeedback({ type: 'success', message: 'Email added to queue', emailId: result.emailId, position: result.position });
-      setForm(EMPTY_FORM);
-      setTouched({});
+      resetForm(false);
+      setFeedback({ type: 'success', message: 'Email added to the queue', emailId: result.emailId, position: result.position });
     } else {
       setFeedback({ type: 'error', message: result.error ?? 'Failed to add email.' });
     }
   };
 
-  return (
-    <div
-      className="rounded-2xl p-5"
-      style={{
-        background: 'linear-gradient(160deg, rgba(14,18,28,0.95) 0%, rgba(8,11,18,0.98) 100%)',
-        border: '1px solid rgba(255,255,255,0.06)',
-      }}
-    >
-      <h2 className="text-xs font-bold text-gray-300 uppercase tracking-widest mb-4 flex items-center gap-2">
-        <PlusCircle className="w-3.5 h-3.5 text-blue-400" />
-        Add Email to Queue
-      </h2>
+  const handleSendNow = async () => {
+    const problem = validateForm();
+    if (problem) {
+      setFeedback({ type: 'error', message: problem });
+      return;
+    }
+    setSubmitting('send');
+    const result = await onSendNow(form);
+    setSubmitting(null);
+    if (result.success) {
+      resetForm(false);
+      setFeedback({ type: 'success', message: 'Email queued and the dispatcher started', emailId: result.emailId });
+    } else {
+      setFeedback({ type: 'error', message: result.error ?? 'Failed to send email.' });
+    }
+  };
 
+  const handleSchedule = async (
+    scheduledForm: EmailFormData,
+    scheduledAt: string,
+    timezone: string
+  ): Promise<ScheduleResult> => {
+    setSubmitting('schedule');
+    const result = await onSchedule(scheduledForm, scheduledAt, timezone);
+    setSubmitting(null);
+    if (result.success) {
+      // The scheduling panel stays open — it shows the confirmation of what
+      // was saved. The composer itself is emptied.
+      resetForm(false);
+    }
+    return result;
+  };
+
+  return (
+    <div className="space-y-3">
       {/* Feedback */}
       {feedback && (
         <div
-          className="mb-4 p-3 rounded-xl flex items-start gap-2.5 animate-fade-up"
-          style={
-            feedback.type === 'success'
-              ? { background: 'rgba(5,46,22,0.6)', border: '1px solid rgba(52,211,153,0.25)' }
-              : { background: 'rgba(69,10,10,0.6)', border: '1px solid rgba(248,113,113,0.25)' }
-          }
+          className={`notice ${feedback.type === 'success' ? 'notice-green' : 'notice-red'} animate-fade-up`}
+          role="status"
+          aria-live="polite"
         >
-          {feedback.type === 'success'
-            ? <CheckCircle className="w-4 h-4 shrink-0 mt-0.5" style={{ color: '#34d399' }} />
-            : <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" style={{ color: '#f87171' }} />
-          }
+          {feedback.type === 'success' ? (
+            <CheckCircle className="w-4 h-4 shrink-0 mt-px" />
+          ) : (
+            <AlertCircle className="w-4 h-4 shrink-0 mt-px" />
+          )}
           <div>
-            <p className="text-sm font-semibold" style={{ color: feedback.type === 'success' ? '#6ee7b7' : '#fca5a5' }}>
-              {feedback.message}
-            </p>
-            {feedback.type === 'success' && (
-              <p className="text-xs mt-0.5" style={{ color: '#4ade80' }}>
-                ID: <strong>{feedback.emailId}</strong> &bull; Position: <strong>#{feedback.position}</strong>
+            <p className="font-semibold">{feedback.message}</p>
+            {feedback.type === 'success' && feedback.emailId && (
+              <p className="mt-0.5 text-[11.5px]">
+                ID: <strong className="mono">{feedback.emailId}</strong>
+                {feedback.position !== undefined && (
+                  <>
+                    {' '}· Position: <strong className="mono">#{feedback.position}</strong>
+                  </>
+                )}
               </p>
             )}
           </div>
         </div>
       )}
 
-      <form onSubmit={handleSubmit} noValidate className="space-y-3">
+      <form onSubmit={handleAdd} noValidate className="space-y-3">
         <Field
-          id="recipient" label="Recipient Email" required
-          icon={<AtSign size={12} />}
+          id="recipient" label="Recipient" required
+          icon={<AtSign size={11} />}
           type="email" placeholder="student@example.com"
           value={form.recipient} error={getError('recipient')}
           disabled={isDisabled}
@@ -166,58 +244,96 @@ export function AddEmailForm({ onAdd, disabled }: AddEmailFormProps) {
         />
         <Field
           id="subject" label="Subject" required
-          icon={<Type size={12} />}
-          placeholder="Assignment Submission"
+          icon={<Type size={11} />}
+          placeholder="Project Update"
           value={form.subject} error={getError('subject')}
           disabled={isDisabled}
           onChange={(v) => handleChange('subject', v)}
           onBlur={() => setTouched((p) => ({ ...p, subject: true }))}
         />
         <Field
-          id="message" label="Message" required rows={3}
-          icon={<MessageSquare size={12} />}
-          placeholder="Your message content…"
+          id="message" label="Message" required rows={4}
+          icon={<MessageSquare size={11} />}
+          placeholder="Please check the latest project status."
           value={form.message} error={getError('message')}
           disabled={isDisabled}
           onChange={(v) => handleChange('message', v)}
           onBlur={() => setTouched((p) => ({ ...p, message: true }))}
         />
         <Field
-          id="senderName" label="Sender Name"
-          icon={<User size={12} />}
-          placeholder="Your Name (optional)"
+          id="senderName" label="Sender name"
+          icon={<User size={11} />}
+          placeholder="Your name (optional)"
           value={form.senderName} error={null}
           disabled={isDisabled}
           onChange={(v) => handleChange('senderName', v)}
           onBlur={() => {}}
         />
 
-        <div className="flex gap-2 pt-1">
+        <div className="flex flex-wrap gap-2 pt-1">
           <button
             type="submit"
             disabled={isDisabled}
-            className="btn flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-white text-sm font-semibold disabled:opacity-50"
-            style={{ background: 'linear-gradient(135deg, #2563eb, #4f46e5)' }}
+            className="btn btn-navy"
+            title="Add the email to the FIFO queue"
           >
-            <PlusCircle className="w-4 h-4" />
-            {submitting ? 'Adding…' : 'Add to Queue'}
+            {submitting === 'add' ? (
+              <Loader2 className="w-4 h-4 animate-spin-smooth" />
+            ) : (
+              <PlusCircle className="w-4 h-4" />
+            )}
+            Add to Queue
           </button>
+
           <button
             type="button"
-            onClick={() => { setForm(EMPTY_FORM); setFeedback(null); setTouched({}); }}
+            onClick={handleSendNow}
             disabled={isDisabled}
-            className="btn px-4 py-2.5 rounded-xl text-sm font-medium disabled:opacity-50"
-            style={{
-              background: 'rgba(255,255,255,0.05)',
-              border: '1px solid rgba(255,255,255,0.08)',
-              color: '#6b7280',
-            }}
-            aria-label="Clear form"
+            className="btn btn-primary"
+            title="Queue the email and start the dispatcher immediately"
+          >
+            {submitting === 'send' ? (
+              <Loader2 className="w-4 h-4 animate-spin-smooth" />
+            ) : (
+              <Send className="w-4 h-4" />
+            )}
+            Send Now
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setScheduleOpen((open) => !open)}
+            disabled={isDisabled}
+            className="btn btn-ghost"
+            aria-expanded={scheduleOpen}
+            title="Save the email as a scheduled delivery"
+          >
+            <CalendarClock className="w-4 h-4" />
+            Schedule for Later
+          </button>
+
+          <button
+            type="button"
+            onClick={() => resetForm()}
+            disabled={isDisabled}
+            className="btn btn-ghost"
+            aria-label="Clear the form"
+            title="Clear the form"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
       </form>
+
+      {scheduleOpen && (
+        <SchedulePanel
+          form={form}
+          validateForm={validateForm}
+          onSchedule={handleSchedule}
+          onCancel={() => setScheduleOpen(false)}
+          disabled={isDisabled}
+        />
+      )}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Mail, CheckCircle, XCircle, Clock, RefreshCw, Zap } from 'lucide-react';
+import { Mail, CheckCircle, XCircle, Clock, RefreshCw, Zap, CalendarClock, Ban } from 'lucide-react';
 import type { Stats } from '../../../shared/types/email';
 
 interface StatsCardsProps {
@@ -43,162 +43,119 @@ interface StatCardProps {
   value: number;
   suffix?: string;
   icon: React.ReactNode;
-  gradient: string;
-  glow: string;
-  borderColor: string;
+  color: string;
   sub?: string;
-  large?: boolean;
 }
 
-function StatCard({ label, value, suffix = '', icon, gradient, glow, borderColor, sub, large }: StatCardProps) {
+function StatCard({ label, value, suffix = '', icon, color, sub }: StatCardProps) {
   const animated = useAnimatedValue(value);
 
   return (
     <div
-      className={`stat-card relative rounded-2xl p-4 overflow-hidden cursor-default select-none`}
-      style={{
-        background: 'linear-gradient(135deg, rgba(18,24,38,0.95) 0%, rgba(10,14,22,0.98) 100%)',
-        border: `1px solid ${borderColor}`,
-      }}
+      className="rounded-card border border-hairline bg-surface-card px-3 py-2.5 transition-colors hover:border-[#A9B9CB]"
+      style={{ borderLeft: `3px solid ${color}` }}
     >
-      {/* Background glow blob */}
-      <div
-        className="absolute -top-6 -right-6 w-20 h-20 rounded-full blur-2xl opacity-20 pointer-events-none"
-        style={{ background: glow }}
-      />
-
-      <div className="relative flex items-start justify-between mb-2">
-        <span className="text-xs text-gray-500 uppercase tracking-widest font-semibold">{label}</span>
-        <div
-          className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 shadow-lg"
-          style={{ background: gradient }}
-        >
-          {icon}
-        </div>
+      <div className="flex items-start justify-between gap-2">
+        <span className="text-[10px] uppercase tracking-widest font-bold text-ink-muted">{label}</span>
+        <span style={{ color }}>{icon}</span>
       </div>
-
-      <div className={`relative font-extrabold tabular-nums leading-none ${large ? 'text-4xl' : 'text-3xl'}`}
-        style={{ background: gradient, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}
-      >
-        {animated}{suffix}
+      <div className="mt-1 text-[22px] font-extrabold leading-none tabular" style={{ color }}>
+        {animated}
+        {suffix}
       </div>
-
-      {sub && <p className="text-xs text-gray-600 mt-1.5 leading-tight">{sub}</p>}
+      {sub && <p className="text-[10.5px] text-ink-faint mt-0.5 leading-tight">{sub}</p>}
     </div>
   );
 }
 
+/**
+ * Module 5 — Summary Exporter.
+ *
+ * The live statistics of the installation. `Scheduled` and `Cancelled` were
+ * added by Module 6 — Scheduled Delivery; the other counters are unchanged.
+ */
 export function StatsCards({ stats }: StatsCardsProps) {
   const processed = stats.delivered + stats.failed;
 
   return (
-    <div className="space-y-3 stagger">
-      {/* Primary 4 */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="animate-fade-up">
-          <StatCard
-            label="Total"
-            value={stats.total}
-            icon={<Mail className="w-4 h-4 text-white" />}
-            gradient="linear-gradient(135deg, #3b82f6, #6366f1)"
-            glow="#3b82f6"
-            borderColor="rgba(99,102,241,0.2)"
-            sub="emails in system"
-          />
-        </div>
-        <div className="animate-fade-up">
-          <StatCard
-            label="Delivered"
-            value={stats.delivered}
-            icon={<CheckCircle className="w-4 h-4 text-white" />}
-            gradient="linear-gradient(135deg, #10b981, #34d399)"
-            glow="#10b981"
-            borderColor="rgba(16,185,129,0.2)"
-            sub={processed > 0 ? `${stats.successRate}% success` : 'awaiting processing'}
-          />
-        </div>
-        <div className="animate-fade-up">
-          <StatCard
-            label="Failed"
-            value={stats.failed}
-            icon={<XCircle className="w-4 h-4 text-white" />}
-            gradient="linear-gradient(135deg, #ef4444, #f87171)"
-            glow="#ef4444"
-            borderColor="rgba(239,68,68,0.2)"
-            sub={processed > 0 ? `${stats.failureRate}% failure` : 'awaiting processing'}
-          />
-        </div>
-        <div className="animate-fade-up">
-          <StatCard
-            label="Queued"
-            value={stats.queued}
-            icon={<Clock className="w-4 h-4 text-white" />}
-            gradient="linear-gradient(135deg, #64748b, #94a3b8)"
-            glow="#64748b"
-            borderColor="rgba(100,116,139,0.2)"
-            sub="waiting in queue"
-          />
-        </div>
-      </div>
-
-      {/* Secondary 3 */}
-      <div className="grid grid-cols-3 gap-3">
-        {[
-          {
-            label: 'Total Attempts',
-            value: stats.totalAttempts,
-            icon: <Zap className="w-3.5 h-3.5 text-white" />,
-            gradient: 'linear-gradient(135deg, #7c3aed, #a78bfa)',
-            glow: '#7c3aed',
-            border: 'rgba(124,58,237,0.2)',
-          },
-          {
-            label: 'Total Retries',
-            value: stats.totalRetries,
-            icon: <RefreshCw className="w-3.5 h-3.5 text-white" />,
-            gradient: 'linear-gradient(135deg, #d97706, #fbbf24)',
-            glow: '#d97706',
-            border: 'rgba(217,119,6,0.2)',
-          },
-          {
-            label: 'Success Rate',
-            value: processed > 0 ? stats.successRate : 0,
-            suffix: '%',
-            icon: <CheckCircle className="w-3.5 h-3.5 text-white" />,
-            gradient: 'linear-gradient(135deg, #0ea5e9, #38bdf8)',
-            glow: '#0ea5e9',
-            border: 'rgba(14,165,233,0.2)',
-          },
-        ].map((s) => (
-          <div
-            key={s.label}
-            className="animate-fade-up flex items-center gap-3 rounded-xl px-3 py-3"
-            style={{
-              background: 'linear-gradient(135deg, rgba(18,24,38,0.9), rgba(10,14,22,0.95))',
-              border: `1px solid ${s.border}`,
-            }}
-          >
-            <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 shadow"
-              style={{ background: s.gradient }}
-            >
-              {s.icon}
-            </div>
-            <div className="min-w-0">
-              <div className="font-bold tabular-nums text-lg leading-none"
-                style={{ background: s.gradient, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}
-              >
-                <AnimNum value={s.value} />{s.suffix ?? ''}
-              </div>
-              <div className="text-xs text-gray-600 mt-0.5">{s.label}</div>
-            </div>
-          </div>
-        ))}
-      </div>
+    <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2">
+      <StatCard
+        label="Total tasks"
+        value={stats.total}
+        icon={<Mail className="w-4 h-4" />}
+        color="#24436A"
+        sub="emails in system"
+      />
+      <StatCard
+        label="Delivered"
+        value={stats.delivered}
+        icon={<CheckCircle className="w-4 h-4" />}
+        color="#16815B"
+        sub={processed > 0 ? `${stats.successRate}% success` : 'awaiting processing'}
+      />
+      <StatCard
+        label="Failed"
+        value={stats.failed}
+        icon={<XCircle className="w-4 h-4" />}
+        color="#B24545"
+        sub={processed > 0 ? `${stats.failureRate}% failure` : 'awaiting processing'}
+      />
+      <StatCard
+        label="Queued"
+        value={stats.queued}
+        icon={<Clock className="w-4 h-4" />}
+        color="#465F7B"
+        sub="waiting in queue"
+      />
+      <StatCard
+        label="Scheduled"
+        value={stats.scheduled}
+        icon={<CalendarClock className="w-4 h-4" />}
+        color="#172A43"
+        sub="waiting for their moment"
+      />
+      <StatCard
+        label="Cancelled"
+        value={stats.cancelled}
+        icon={<Ban className="w-4 h-4" />}
+        color="#8A9BB0"
+        sub="schedules called off"
+      />
     </div>
   );
 }
 
-function AnimNum({ value }: { value: number }) {
-  const v = useAnimatedValue(value);
-  return <>{v}</>;
+/** The secondary counters — attempts, retries and the success rate. */
+export function StatsDetails({ stats }: StatsCardsProps) {
+  const processed = stats.delivered + stats.failed;
+
+  return (
+    <div className="grid grid-cols-3 gap-2">
+      {[
+        { label: 'Attempts', value: stats.totalAttempts, icon: <Zap className="w-3.5 h-3.5" />, color: '#24436A' },
+        { label: 'Retries', value: stats.totalRetries, icon: <RefreshCw className="w-3.5 h-3.5" />, color: '#A56B18' },
+        {
+          label: 'Success rate',
+          value: processed > 0 ? stats.successRate : 0,
+          suffix: '%',
+          icon: <CheckCircle className="w-3.5 h-3.5" />,
+          color: '#16815B',
+        },
+      ].map((item) => (
+        <div
+          key={item.label}
+          className="flex items-center gap-2 rounded-control border border-hairline px-2.5 py-2"
+        >
+          <span style={{ color: item.color }}>{item.icon}</span>
+          <div className="min-w-0">
+            <div className="text-[15px] font-bold leading-none tabular" style={{ color: item.color }}>
+              {item.value}
+              {item.suffix ?? ''}
+            </div>
+            <div className="text-[10.5px] text-ink-muted mt-0.5 truncate">{item.label}</div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 }

@@ -52,97 +52,96 @@ export function AdminPanel({ currentUid }: AdminPanelProps) {
   };
 
   return (
-    <div
-      className="rounded-2xl p-5 space-y-4"
-      style={{
-        background: 'linear-gradient(160deg, rgba(14,18,28,0.95) 0%, rgba(8,11,18,0.98) 100%)',
-        border: '1px solid rgba(255,255,255,0.06)',
-      }}
-    >
-      <h2 className="text-xs font-bold text-gray-300 uppercase tracking-widest flex items-center gap-2">
-        <Users className="w-3.5 h-3.5 text-cyan-400" />
-        Accounts &amp; Roles
-      </h2>
+    <section className="card">
+      <header className="card-head">
+        <h2 className="card-title">
+          <Users className="w-3.5 h-3.5 text-navy-700" />
+          ACCOUNTS &amp; ROLES
+        </h2>
+        <span className="text-[11px] text-ink-muted">Administrator only</span>
+      </header>
+      <div className="card-body space-y-3">
+        {message && (
+          <p
+            className="notice"
+            role="status"
+            aria-live="polite"
+            style={{
+              background: message.type === 'success' ? '#E7F4EE' : '#FBECEC',
+              borderColor: message.type === 'success' ? '#BFE2D4' : '#EFCACA',
+              color: message.type === 'success' ? '#16815B' : '#B24545',
+            }}
+          >
+            {message.type === 'success' ? (
+              <CheckCircle2 className="w-3.5 h-3.5 shrink-0 mt-px" />
+            ) : (
+              <XCircle className="w-3.5 h-3.5 shrink-0 mt-px" />
+            )}
+            {message.text}
+          </p>
+        )}
 
-      {message && (
-        <p
-          className="text-xs flex items-center gap-1.5 animate-fade-up"
-          role="status"
-          aria-live="polite"
-          style={{ color: message.type === 'success' ? '#6ee7b7' : '#fca5a5' }}
-        >
-          {message.type === 'success'
-            ? <CheckCircle2 className="w-3.5 h-3.5" />
-            : <XCircle className="w-3.5 h-3.5" />}
-          {message.text}
-        </p>
-      )}
-
-      {loading ? (
-        <p className="text-xs text-gray-600 flex items-center gap-2">
-          <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading accounts…
-        </p>
-      ) : users.length === 0 ? (
-        <p className="text-xs text-gray-600">No accounts yet.</p>
-      ) : (
-        <ul className="space-y-2">
-          {users.map((u) => {
-            const isSelf = u.uid === currentUid;
-            const busy = busyUid === u.uid;
-            return (
-              <li
-                key={u.uid}
-                className="flex items-center gap-3 rounded-xl px-3 py-2.5"
-                style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs font-semibold text-gray-200 truncate">
-                    {u.displayName || u.email || u.uid}
-                    {isSelf && <span className="ml-2 text-[10px] text-blue-400">(you)</span>}
-                  </p>
-                  <p className="text-[11px] text-gray-600 truncate">{u.email || u.uid}</p>
-                </div>
-
-                <span
-                  className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full shrink-0"
-                  style={{
-                    background: u.role === 'admin' ? 'rgba(124,58,237,0.18)' : 'rgba(255,255,255,0.05)',
-                    border: u.role === 'admin' ? '1px solid rgba(167,139,250,0.35)' : '1px solid rgba(255,255,255,0.08)',
-                    color: u.role === 'admin' ? '#c4b5fd' : '#6b7280',
-                  }}
+        {loading ? (
+          <p className="text-[12px] text-ink-muted flex items-center gap-2">
+            <Loader2 className="w-3.5 h-3.5 animate-spin-smooth" /> Loading accounts…
+          </p>
+        ) : users.length === 0 ? (
+          <p className="text-[12px] text-ink-muted">No accounts yet.</p>
+        ) : (
+          <ul className="space-y-1.5">
+            {users.map((u) => {
+              const isSelf = u.uid === currentUid;
+              const busy = busyUid === u.uid;
+              return (
+                <li
+                  key={u.uid}
+                  className="flex items-center gap-3 rounded-control border border-hairline px-3 py-2"
                 >
-                  {u.role === 'admin' ? 'Admin' : 'Operator'}
-                </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[12.5px] font-semibold text-navy-900 truncate">
+                      {u.displayName || u.email || u.uid}
+                      {isSelf && (
+                        <span className="ml-2 text-[10.5px]" style={{ color: '#24436A' }}>
+                          (you)
+                        </span>
+                      )}
+                    </p>
+                    <p className="text-[11px] text-ink-faint truncate">{u.email || u.uid}</p>
+                  </div>
 
-                <button
-                  type="button"
-                  onClick={() => changeRole(u.uid, u.role === 'admin' ? 'operator' : 'admin')}
-                  disabled={busy || isSelf}
-                  title={isSelf ? 'You cannot change your own role' : `Make ${u.role === 'admin' ? 'an operator' : 'an administrator'}`}
-                  aria-label={`Change the role of ${u.email || u.uid}`}
-                  className="btn shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
-                  style={{
-                    background: 'rgba(255,255,255,0.05)',
-                    border: '1px solid rgba(255,255,255,0.08)',
-                    color: '#9ca3af',
-                  }}
-                >
-                  {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserCog className="w-3.5 h-3.5" />}
-                  {u.role === 'admin' ? 'Make operator' : 'Make admin'}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
+                  <span className={`badge ${u.role === 'admin' ? 'badge-navy' : 'badge-slate'}`}>
+                    {u.role === 'admin' ? 'Admin' : 'Operator'}
+                  </span>
 
-      <p className="text-[11px] leading-snug flex items-start gap-2" style={{ color: '#374151' }}>
-        <ShieldCheck className="w-3.5 h-3.5 shrink-0 mt-px" style={{ color: '#4b5563' }} />
-        <span>
-          Operators can enqueue and dispatch emails but cannot read the SMTP configuration
-          or manage accounts.
-        </span>
-      </p>
-    </div>
+                  <button
+                    type="button"
+                    onClick={() => changeRole(u.uid, u.role === 'admin' ? 'operator' : 'admin')}
+                    disabled={busy || isSelf}
+                    title={isSelf ? 'You cannot change your own role' : `Make ${u.role === 'admin' ? 'an operator' : 'an administrator'}`}
+                    aria-label={`Change the role of ${u.email || u.uid}`}
+                    className="btn btn-ghost btn-sm shrink-0"
+                  >
+                    {busy ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin-smooth" />
+                    ) : (
+                      <UserCog className="w-3.5 h-3.5" />
+                    )}
+                    {u.role === 'admin' ? 'Make operator' : 'Make admin'}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+
+        <p className="text-[11px] leading-snug flex items-start gap-2 text-ink-faint">
+          <ShieldCheck className="w-3.5 h-3.5 shrink-0 mt-px" />
+          <span>
+            Operators can enqueue, schedule and dispatch emails but cannot read the SMTP
+            configuration or manage accounts.
+          </span>
+        </p>
+      </div>
+    </section>
   );
 }

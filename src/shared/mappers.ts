@@ -20,6 +20,9 @@ export function statsFromDoc(doc: Record<string, unknown>): Stats {
     delivered,
     failed,
     retrying,
+    // Module 6 — Scheduled Delivery
+    scheduled: Number(doc.scheduled) || 0,
+    cancelled: Number(doc.cancelled) || 0,
     totalAttempts: Number(doc.totalAttempts) || 0,
     totalRetries: Number(doc.totalRetries) || 0,
     successRate: processed > 0 ? Math.round((delivered / processed) * 100) : 0,
@@ -58,12 +61,37 @@ export function configFromDoc(doc: Record<string, unknown>): ServerConfig | null
   };
 }
 
+/**
+ * Normalise a timestamp that may be a Firestore `Timestamp`, an ISO string
+ * or epoch milliseconds into an ISO-8601 string.
+ */
+function toIsoString(value: unknown): string | null {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? null : value;
+  }
+  if (typeof value === 'number') {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date.toISOString();
+  }
+  const maybe = value as { toDate?: () => Date; seconds?: number };
+  if (typeof maybe.toDate === 'function') return maybe.toDate().toISOString();
+  if (typeof maybe.seconds === 'number') return new Date(maybe.seconds * 1000).toISOString();
+  return null;
+}
+
 /** A raw Firestore document → an `Email`. */
 export function toEmail(doc: Record<string, unknown>): Email {
   const email = doc as unknown as Email;
   return {
     ...email,
     logs: Array.isArray(email.logs) ? email.logs : [],
+    // Module 6 — Scheduled Delivery: the server stores the schedule as a
+    // Firestore Timestamp; the dashboard always works with ISO strings.
+    scheduledAt: toIsoString(email.scheduledAt),
+    dispatchedAt: toIsoString(email.dispatchedAt),
+    cancelledAt: toIsoString(email.cancelledAt),
   };
 }
 

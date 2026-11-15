@@ -1,4 +1,4 @@
-import { RefreshCw, CheckCircle, XCircle, Clock, Zap, Trash2 } from 'lucide-react';
+import { RefreshCw, CheckCircle, XCircle, Clock, Zap, Trash2, CalendarClock, Ban } from 'lucide-react';
 import type { Email, EmailStatus } from '../../../shared/types/email';
 import { formatTime } from '../../../shared/utils/format';
 
@@ -10,166 +10,103 @@ interface QueueItemProps {
   onRemove?: (id: string) => void;
 }
 
-const STATUS_CONFIG: Record<EmailStatus, {
-  label: string;
-  icon: React.ReactNode;
-  gradient: string;
-  bg: string;
-  border: string;
-  text: string;
-}> = {
-  QUEUED: {
-    label: 'QUEUED',
-    icon: <Clock className="w-3 h-3" />,
-    gradient: 'linear-gradient(135deg, #475569, #64748b)',
-    bg: 'rgba(71,85,105,0.12)',
-    border: 'rgba(100,116,139,0.25)',
-    text: '#94a3b8',
-  },
-  SENDING: {
-    label: 'SENDING',
-    icon: <Zap className="w-3 h-3" />,
-    gradient: 'linear-gradient(135deg, #2563eb, #4f46e5)',
-    bg: 'rgba(37,99,235,0.14)',
-    border: 'rgba(99,102,241,0.4)',
-    text: '#93c5fd',
-  },
-  RETRYING: {
-    label: 'RETRYING',
-    icon: <RefreshCw className="w-3 h-3 animate-spin-smooth" />,
-    gradient: 'linear-gradient(135deg, #d97706, #f59e0b)',
-    bg: 'rgba(217,119,6,0.14)',
-    border: 'rgba(245,158,11,0.4)',
-    text: '#fcd34d',
-  },
-  DELIVERED: {
-    label: 'DELIVERED',
-    icon: <CheckCircle className="w-3 h-3" />,
-    gradient: 'linear-gradient(135deg, #059669, #10b981)',
-    bg: 'rgba(5,150,105,0.12)',
-    border: 'rgba(16,185,129,0.3)',
-    text: '#6ee7b7',
-  },
-  FAILED: {
-    label: 'FAILED',
-    icon: <XCircle className="w-3 h-3" />,
-    gradient: 'linear-gradient(135deg, #dc2626, #ef4444)',
-    bg: 'rgba(220,38,38,0.12)',
-    border: 'rgba(239,68,68,0.3)',
-    text: '#fca5a5',
-  },
+const STATUS_CONFIG: Record<EmailStatus, { label: string; icon: React.ReactNode; badge: string }> = {
+  QUEUED: { label: 'QUEUED', icon: <Clock className="w-3 h-3" />, badge: 'badge-slate' },
+  SCHEDULED: { label: 'SCHEDULED', icon: <CalendarClock className="w-3 h-3" />, badge: 'badge-navy' },
+  SENDING: { label: 'SENDING', icon: <Zap className="w-3 h-3" />, badge: 'badge-navy' },
+  RETRYING: { label: 'RETRYING', icon: <RefreshCw className="w-3 h-3 animate-spin-smooth" />, badge: 'badge-amber' },
+  DELIVERED: { label: 'DELIVERED', icon: <CheckCircle className="w-3 h-3" />, badge: 'badge-green' },
+  FAILED: { label: 'FAILED', icon: <XCircle className="w-3 h-3" />, badge: 'badge-red' },
+  CANCELLED: { label: 'CANCELLED', icon: <Ban className="w-3 h-3" />, badge: 'badge-slate' },
 };
 
-function StatusBadge({ status }: { status: EmailStatus }) {
-  const cfg = STATUS_CONFIG[status];
-  return (
-    <span
-      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold"
-      style={{ background: cfg.bg, border: `1px solid ${cfg.border}`, color: cfg.text }}
-    >
-      {cfg.icon}
-      {cfg.label}
-    </span>
-  );
-}
-
 export function QueueItem({ email, position, isActive, onRemove }: QueueItemProps) {
-  const cfg = STATUS_CONFIG[email.status];
+  const cfg = STATUS_CONFIG[email.status] ?? STATUS_CONFIG.QUEUED;
   const canRemove = Boolean(onRemove && email.status === 'QUEUED');
+  const scheduled = email.status === 'SCHEDULED' || email.deliveryMode === 'SCHEDULED';
 
   return (
-    <div
-      className={`relative rounded-xl p-3 transition-all duration-300 animate-fade-up ${
-        isActive ? 'queue-item-active' : ''
-      }`}
-      style={
-        isActive
-          ? {}
-          : {
-              background: 'rgba(14,18,28,0.7)',
-              border: `1px solid ${cfg.border}`,
-            }
-      }
-    >
-      {/* Left accent bar — only when active */}
-      {isActive && (
-        <div
-          className="absolute left-0 top-3 bottom-3 w-0.5 rounded-r-full"
-          style={{ background: 'linear-gradient(180deg, #60a5fa, #818cf8)' }}
-        />
-      )}
-
-      <div className="flex items-start justify-between gap-2 pl-1">
+    <div className={`queue-row ${isActive ? 'queue-row-active' : ''}`}>
+      <div className="flex items-start justify-between gap-2">
         {/* Left: position + info */}
-        <div className="flex items-start gap-2.5 min-w-0">
-          {/* Position circle — only pending emails hold a queue position */}
+        <div className="flex items-start gap-2.5 min-w-0 flex-1">
+          {/* Position */}
           <div
-            className="shrink-0 w-6 h-6 rounded-lg flex items-center justify-center text-xs font-bold leading-none mt-0.5 transition-all duration-300"
-            style={
-              isActive
-                ? { background: 'linear-gradient(135deg, #2563eb, #4f46e5)', color: '#fff' }
-                : position !== null
-                  ? { background: 'rgba(255,255,255,0.06)', color: '#64748b' }
-                  : { background: 'transparent', color: '#334155' }
-            }
+            className={`queue-position ${isActive ? 'queue-position-active' : ''}`}
             title={position !== null ? `Queue position ${position}` : undefined}
           >
             {position ?? ''}
           </div>
 
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-mono font-bold text-xs text-gray-200 tracking-wide">{email.id}</span>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="mono font-bold text-[11.5px] text-navy-900">{email.id}</span>
+              <span className={`badge ${cfg.badge}`}>
+                {cfg.icon}
+                {cfg.label}
+              </span>
               {isActive && (
-                <span className="text-xs font-semibold animate-pulse" style={{ color: '#60a5fa' }}>
-                  ← LIVE
+                <span className="text-[10px] font-bold tracking-widest" style={{ color: '#24436A' }}>
+                  LIVE
                 </span>
               )}
             </div>
-            <p className="text-xs text-gray-500 truncate mt-0.5">{email.recipient}</p>
-            <p className="text-xs mt-0.5 truncate" style={{ color: '#475569' }}>{email.subject}</p>
+
+            <p className="text-[12px] text-ink-muted truncate mt-0.5">{email.recipient}</p>
+            <p className="text-[12px] text-ink-faint truncate">{email.subject}</p>
+
+            {scheduled && email.scheduledAt && (
+              <p className="text-[11px] mt-1 flex items-center gap-1" style={{ color: '#24436A' }}>
+                <CalendarClock className="w-3 h-3 shrink-0" />
+                <span className="truncate">
+                  {new Date(email.scheduledAt).toLocaleString('en-GB', {
+                    timeZone: email.timezone || 'UTC',
+                    dateStyle: 'medium',
+                    timeStyle: 'short',
+                  })}
+                  {email.timezone ? ` (${email.timezone})` : ''}
+                </span>
+              </p>
+            )}
+
             {email.status === 'FAILED' && email.socketErr && (
-              <p className="text-xs mt-0.5 truncate" style={{ color: '#7f1d1d' }} title={email.socketErr}>
+              <p className="text-[11px] mt-0.5 truncate" style={{ color: '#B24545' }} title={email.socketErr}>
                 {email.socketErr}
               </p>
             )}
           </div>
         </div>
 
-        {/* Right: badges */}
+        {/* Right: attempts + removal */}
         <div className="shrink-0 flex flex-col items-end gap-1">
-          <div className="flex items-center gap-1.5">
-            <StatusBadge status={email.status} />
-            {canRemove && onRemove && (
-              <button
-                onClick={() => onRemove(email.id)}
-                className="p-1 rounded-md transition-colors hover:bg-white/10"
-                style={{ color: '#4b5563' }}
-                title="Remove from queue"
-                aria-label={`Remove ${email.id} from queue`}
-              >
-                <Trash2 className="w-3 h-3" />
-              </button>
-            )}
-          </div>
           {email.retries > 0 && (
-            <span className="text-xs flex items-center gap-1" style={{ color: '#fbbf24' }}>
+            <span className="text-[11px] flex items-center gap-1" style={{ color: '#A56B18' }}>
               <RefreshCw className="w-3 h-3" />
               {email.retries}×
             </span>
           )}
+          {canRemove && onRemove && (
+            <button
+              type="button"
+              onClick={() => onRemove(email.id)}
+              className="btn btn-ghost btn-sm"
+              style={{ color: '#B24545' }}
+              title="Remove from queue"
+              aria-label={`Remove ${email.id} from queue`}
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Attempt mini-badges */}
+      {/* Attempt history */}
       {email.logs.length > 0 && (
-        <div className="mt-2 pt-2 border-t border-white/[0.05] flex flex-wrap gap-1">
+        <div className="mt-1.5 pt-1.5 border-t border-hairline-soft flex flex-wrap gap-1">
           {email.logs.map((log) => (
             <span
               key={log.attempt}
-              className={`text-xs px-1.5 py-0.5 rounded font-mono font-medium ${
-                log.result === 'SUCCESS' ? 'attempt-badge-success' : 'attempt-badge-fail'
-              }`}
+              className={`badge ${log.result === 'SUCCESS' ? 'badge-green' : 'badge-red'}`}
               title={`Attempt ${log.attempt}: ${log.result}${log.detail ? ` — ${log.detail}` : ''} (${formatTime(log.timestamp)})`}
             >
               A{log.attempt} {log.result === 'SUCCESS' ? '✓' : '✗'}

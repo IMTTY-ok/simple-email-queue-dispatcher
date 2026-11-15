@@ -1,158 +1,138 @@
-import { Play, Pause, RotateCcw, Mail, Activity, Zap, LogOut, ShieldCheck } from 'lucide-react';
+import { Mail, LogOut, ShieldCheck, User } from 'lucide-react';
 
 interface HeaderProps {
+  /** Is the backend reachable? */
+  connected: boolean;
+  /** `DRY-RUN` or `LIVE` — the real operating mode of the installation. */
+  mode: 'DRY-RUN' | 'LIVE';
+  /** Is the dispatcher currently working? */
   isProcessing: boolean;
   isPaused: boolean;
-  connected: boolean;
   accountLabel: string;
   roleLabel: string;
-  onStart: () => void;
-  onPause: () => void;
-  onReset: () => void;
   onSignOut: () => void;
 }
 
 /**
- * The application chrome: identity on the left, live status in the middle,
- * the dispatcher controls on the right.
+ * The application header.
+ *
+ * A full-width dark navy bar: the identity on the left, the live server
+ * state and the operating mode on the right. Both indicators read from the
+ * real application state — nothing here is hardcoded.
  */
 export function Header({
+  connected,
+  mode,
   isProcessing,
   isPaused,
-  connected,
   accountLabel,
   roleLabel,
-  onStart,
-  onPause,
-  onReset,
   onSignOut,
 }: HeaderProps) {
+  const dispatcherLabel = isProcessing && !isPaused ? 'DISPATCHING' : isPaused ? 'PAUSED' : 'IDLE';
+
   return (
-    <header className="sticky top-0 z-50 border-b border-white/[0.06]"
-      style={{ background: 'rgba(8,11,18,0.85)', backdropFilter: 'blur(20px) saturate(180%)' }}
-    >
-      {/* Subtle top glow line */}
-      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-blue-500/40 to-transparent" />
-
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16 gap-3">
-
-          {/* Logo / Title */}
+    <header className="w-full" style={{ background: '#172A43' }}>
+      <div className="mx-auto max-w-[1400px] px-4 sm:px-6">
+        <div className="flex items-center justify-between gap-4 h-14">
+          {/* Identity */}
           <div className="flex items-center gap-3 min-w-0">
-            <div className="relative shrink-0">
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center"
-                style={{ background: 'linear-gradient(135deg, #2563eb, #7c3aed)' }}
-              >
-                <Mail className="w-4.5 h-4.5 text-white" size={18} />
-              </div>
-              {isProcessing && !isPaused && (
-                <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-blue-400 rounded-full animate-pulse-dot border-2 border-gray-950" />
-              )}
+            <div
+              className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+              style={{ background: '#24436A' }}
+            >
+              <Mail className="w-4 h-4 text-white" />
             </div>
             <div className="min-w-0">
-              <h1 className="font-bold text-base sm:text-lg leading-tight tracking-tight text-white truncate">
-                Email Queue Dispatcher
+              <h1
+                className="text-[12.5px] font-bold tracking-[0.1em] uppercase leading-tight truncate"
+                style={{ color: '#FFFFFF' }}
+              >
+                Simple Email Queue Dispatcher
               </h1>
-              <p className="text-gray-500 text-xs leading-tight truncate">Real SMTP Dispatch &amp; Queue Retry</p>
+              <p
+                className="text-[10px] leading-tight tracking-[0.08em] uppercase truncate"
+                style={{ color: '#8FA6C4' }}
+              >
+                Server-side SMTP dispatch · retry engine · scheduling
+              </p>
             </div>
           </div>
 
-          {/* Server connection pill */}
-          <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full border shrink-0"
-            style={{
-              border: connected ? '1px solid rgba(52,211,153,0.25)' : '1px solid rgba(248,113,113,0.25)',
-              background: connected ? 'rgba(5,46,22,0.35)' : 'rgba(69,10,10,0.35)',
-            }}
-            title={connected ? 'Connected to Firebase backend' : 'Dispatcher data source unreachable'}
-          >
-            <span className={`w-1.5 h-1.5 rounded-full ${connected ? 'bg-emerald-400' : 'bg-red-400'} animate-pulse-dot`} />
-            <span className="text-xs font-medium" style={{ color: connected ? '#6ee7b7' : '#fca5a5' }}>
-              {connected ? 'Server' : 'Offline'}
-            </span>
-          </div>
-
-          {/* Center status pill */}
-          <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full border border-white/[0.07] shrink-0"
-            style={{ background: 'rgba(15,20,30,0.6)' }}
-          >
-            {isProcessing && !isPaused ? (
-              <>
-                <Zap className="w-3.5 h-3.5 text-blue-400" />
-                <span className="text-xs text-blue-400 font-medium">Processing</span>
-                <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse-dot" />
-              </>
-            ) : isPaused ? (
-              <>
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse-dot" />
-                <span className="text-xs text-amber-400 font-medium">Paused</span>
-              </>
-            ) : (
-              <>
-                <Activity className="w-3.5 h-3.5 text-emerald-400" />
-                <span className="text-xs text-emerald-400 font-medium">System Ready</span>
-              </>
-            )}
-          </div>
-
-          {/* Controls */}
-          <div className="flex items-center gap-2 shrink-0">
-            {!isProcessing || isPaused ? (
-              <button
-                onClick={onStart}
-                className="btn flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-white text-sm font-semibold"
-                style={{ background: 'linear-gradient(135deg, #2563eb, #4f46e5)' }}
-                title={isPaused ? 'Resume Processing' : 'Start Processing'}
-                aria-label={isPaused ? 'Resume processing' : 'Start processing'}
-              >
-                <Play className="w-3.5 h-3.5" fill="currentColor" />
-                <span className="hidden sm:inline">{isPaused ? 'Resume' : 'Start'}</span>
-              </button>
-            ) : (
-              <button
-                onClick={onPause}
-                className="btn flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-white text-sm font-semibold"
-                style={{ background: 'linear-gradient(135deg, #d97706, #b45309)' }}
-                title="Pause Processing"
-                aria-label="Pause processing"
-              >
-                <Pause className="w-3.5 h-3.5" fill="currentColor" />
-                <span className="hidden sm:inline">Pause</span>
-              </button>
-            )}
-            <button
-              onClick={onReset}
-              className="btn flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-gray-300 text-sm font-medium border border-white/[0.08]"
-              style={{ background: 'rgba(255,255,255,0.05)' }}
-              title="Reset All"
-              aria-label="Reset all data"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Reset</span>
-            </button>
-
-            {/* Signed-in account */}
+          {/* Live state */}
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
             <div
-              className="flex items-center gap-2 pl-2 sm:pl-3 ml-1 border-l border-white/[0.07]"
+              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-md"
+              style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)' }}
+              title={connected ? 'Connected to the backend' : 'The backend is unreachable'}
+            >
+              <span className={`status-dot ${connected ? 'status-dot-live' : 'status-dot-off'}`} />
+              <span
+                className="text-[10.5px] font-bold tracking-[0.08em] uppercase"
+                style={{ color: connected ? '#8FE0C0' : '#F0B4B4' }}
+              >
+                Server: {connected ? 'Online' : 'Offline'}
+              </span>
+            </div>
+
+            <div
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md"
+              style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)' }}
+              title={`Operating mode: ${mode}`}
+            >
+              <span
+                className="text-[10.5px] font-bold tracking-[0.08em] uppercase"
+                style={{ color: mode === 'LIVE' ? '#8FE0C0' : '#F3CE8E' }}
+              >
+                Mode: {mode}
+              </span>
+            </div>
+
+            <div
+              className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-md"
+              style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)' }}
+              title={`Dispatcher: ${dispatcherLabel}`}
+            >
+              <span
+                className={`status-dot ${
+                  isProcessing && !isPaused ? 'status-dot-live' : isPaused ? 'status-dot-wait' : 'status-dot-off'
+                }`}
+                style={isProcessing || isPaused ? undefined : { background: '#8FA6C4' }}
+              />
+              <span className="text-[10.5px] font-bold tracking-[0.08em] uppercase" style={{ color: '#C9D6E6' }}>
+                {dispatcherLabel}
+              </span>
+            </div>
+
+            {/* Account */}
+            <div
+              className="flex items-center gap-2 pl-2 sm:pl-3 border-l"
+              style={{ borderColor: 'rgba(255,255,255,0.14)' }}
               title={`Signed in as ${accountLabel} (${roleLabel})`}
             >
-              <div className="hidden xl:flex flex-col items-end leading-tight">
-                <span className="text-xs font-medium text-gray-300 max-w-[150px] truncate">
+              <div className="hidden lg:flex items-center gap-1.5">
+                <User className="w-3.5 h-3.5" style={{ color: '#8FA6C4' }} />
+                <span className="text-[11px] max-w-[130px] truncate" style={{ color: '#C9D6E6' }}>
                   {accountLabel}
                 </span>
-                <span className="text-[10px] uppercase tracking-wider flex items-center gap-1" style={{ color: '#4b5563' }}>
+                <span
+                  className="flex items-center gap-1 text-[9.5px] font-bold tracking-[0.08em] uppercase"
+                  style={{ color: '#8FA6C4' }}
+                >
                   <ShieldCheck className="w-3 h-3" />
                   {roleLabel}
                 </span>
               </div>
               <button
+                type="button"
                 onClick={onSignOut}
-                className="btn flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-gray-400 text-xs font-medium border border-white/[0.08]"
-                style={{ background: 'rgba(255,255,255,0.05)' }}
-                title={`Sign out (${roleLabel})`}
+                className="btn btn-sm"
+                style={{ background: 'rgba(255,255,255,0.08)', color: '#DCE6F2' }}
                 aria-label="Sign out"
+                title="Sign out"
               >
                 <LogOut className="w-3.5 h-3.5" />
-                <span className="hidden xl:inline">Sign out</span>
+                <span className="hidden sm:inline">Sign out</span>
               </button>
             </div>
           </div>

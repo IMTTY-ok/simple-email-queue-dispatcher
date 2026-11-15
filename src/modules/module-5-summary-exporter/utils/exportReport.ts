@@ -24,6 +24,12 @@ export function exportCSV(emails: Email[]): string {
     'Created At',
     'Updated At',
     'Attempt Logs',
+    // Module 6 — Scheduled Delivery
+    'Delivery Mode',
+    'Scheduled For (UTC)',
+    'Timezone',
+    'Dispatched At (UTC)',
+    'Cancelled At (UTC)',
   ];
 
   const rows = emails.map((email) => {
@@ -45,6 +51,11 @@ export function exportCSV(emails: Email[]): string {
       csvCell(email.createdAt),
       csvCell(email.updatedAt),
       csvCell(logSummary),
+      csvCell(email.deliveryMode || 'IMMEDIATE'),
+      csvCell(email.scheduledAt || ''),
+      csvCell(email.timezone || ''),
+      csvCell(email.dispatchedAt || ''),
+      csvCell(email.cancelledAt || ''),
     ].join(',');
   });
 
@@ -64,6 +75,9 @@ export function exportJSON(emails: Email[], stats: Stats): string {
       queued: stats.queued,
       sending: stats.sending,
       retrying: stats.retrying,
+      // Module 6 — Scheduled Delivery
+      scheduled: stats.scheduled,
+      cancelled: stats.cancelled,
       totalAttempts: stats.totalAttempts,
       totalRetries: stats.totalRetries,
       successRate: `${stats.successRate}%`,

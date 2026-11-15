@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Database, Loader2 } from 'lucide-react';
+import { Database, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 
 interface DemoDataButtonProps {
   disabled?: boolean;
@@ -29,23 +29,29 @@ export function DemoDataButton({ disabled, onLoadDemo }: DemoDataButtonProps) {
   };
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-1.5">
       <button
+        type="button"
         onClick={handleClick}
         disabled={disabled || busy}
-        className="btn w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed"
-        style={{ background: 'linear-gradient(135deg, #4338ca, #6d28d9)' }}
+        className="btn btn-ghost w-full"
+        title="Fill the queue with the five sample emails from the PRD"
       >
-        {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Database className="w-4 h-4" />}
+        {busy ? <Loader2 className="w-4 h-4 animate-spin-smooth" /> : <Database className="w-4 h-4" />}
         Load Demo Data
       </button>
       {message && (
         <p
-          className="text-xs text-center animate-fade-up"
+          className={`text-[11.5px] flex items-center gap-1.5 ${message.type === 'success' ? '' : ''}`}
           role="status"
           aria-live="polite"
-          style={{ color: message.type === 'success' ? '#6ee7b7' : '#fca5a5' }}
+          style={{ color: message.type === 'success' ? '#16815B' : '#B24545' }}
         >
+          {message.type === 'success' ? (
+            <CheckCircle2 className="w-3.5 h-3.5" />
+          ) : (
+            <AlertCircle className="w-3.5 h-3.5" />
+          )}
           {message.text}
         </p>
       )}
