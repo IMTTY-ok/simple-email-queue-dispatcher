@@ -297,6 +297,10 @@ and the access model has two roles.
 3. Click **Create account** and register any email and password
 4. That account is now the administrator
 
+The password field has a **show password** toggle — the eye icon on the right
+of the field — so you can check what you typed without retyping it. It works
+on the sign-in form and on the administrator's SMTP password field.
+
 > In the Firebase console (production) enable **Authentication → Sign-in
 > method → Email/Password**. The emulator needs no configuration.
 
@@ -576,10 +580,26 @@ everything that is due right now.
 
 ### The settings panel
 
+There are **two** settings cards, and each one saves only what it shows.
+
+| Card | Where | Holds | Saved with |
+| --- | --- | --- | --- |
+| **SMTP Configuration** | bottom of the right column | host, port, TLS, username, password, sender name, sender address | **Save Config** |
+| **Module 2 + 3 \| SIMULATION & RETRY SETTINGS** | left column | the dry-run switch, the simulation mode, the retry limit, the dispatch speed | **Save Simulation Settings** / **Save Retry Settings** |
+
 The **SMTP Configuration** card (administrators only) holds the server, port
 and credentials. Press **Save Config**.
 *Test Connection* opens a socket and authenticates without sending anything;
 *Send a test email* additionally delivers a real message to the address you type.
+
+The password field has an **eye toggle** that reveals what you typed. Leave the
+field **blank** to keep the stored password — a blank field never overwrites it.
+
+> The two cards never fight each other. Saving the SMTP configuration does
+> **not** touch the dry-run switch, and saving the simulation settings does
+> **not** touch the mailbox. Each card sends only the fields it actually
+> renders, and both re-read the server's copy whenever you have not edited
+> them.
 
 Enable **Dry-run** to simulate. While dry-run is on, the **Simulation Mode**
 buttons become active:
@@ -970,6 +990,8 @@ python scripts/responsive_check.py  # layout + accessibility sweep over 4 breakp
 | *"Origin not allowed"* | The browser's origin is not in `ALLOWED_ORIGIN` | See [7.4](#74-allowed_origin--the-one-setting-people-get-wrong) |
 | The dashboard loads but Start does nothing | Same as above — reads work, writes are refused | Fix `ALLOWED_ORIGIN` |
 | *"SMTP is not configured"* when pressing Start | Dry-run is off and no host is set | Fill in the SMTP settings, or tick **Dry-run** |
+| The header still says **DRY-RUN** after you turned it off | The switch lives in the **Module 2 + 3** card and needs its own save | Untick **Dry-run** there → **Save Simulation Settings**. The header re-reads the mode from the server every 30 s |
+| The icon in a field sits on top of the text | A Tailwind padding utility is being overridden by a component class | Component classes live in the `components` CSS layer — see [Contributing](#18-contributing) |
 | *"No emails in the queue"* | The queue is empty | Add an email or press **Load Demo Data** |
 | *"Please enter a valid email address."* | The recipient failed validation | Use a full address, e.g. `student@example.com` |
 | Emails always fail with `535` / `535 5.7.8` | The provider rejects the login | You are most likely using your account password — generate an **app password** |
@@ -1030,6 +1052,31 @@ Contributions are welcome.
 
 5. Commit with a clear message and open a pull request describing the change and
    how you verified it.
+
+### The CSS layer order
+
+`src/index.css` opens with an explicit layer declaration:
+
+```css
+@layer base, components, utilities;
+```
+
+Every custom class — `.card`, `.btn`, `.input`, `.badge`, `.tab` — is written
+**inside** `@layer components { … }`. That matters: **unlayered CSS beats every
+Tailwind utility**, so a bare `.input { padding: 7px 10px }` would silently
+defeat `pl-8` and leave an icon sitting on top of the text. Inside the
+`components` layer, the `utilities` layer wins, so `input pl-8` behaves the way
+it reads.
+
+Two rules follow from that:
+
+- **Put new component classes inside the `@layer components` block**, not below
+  it. A class added after the block is unlayered and will override utilities.
+- **Reach for a utility when you want to override a component class** — that is
+  the whole point of the layer order.
+
+The same rule applies to the Tailwind config: `theme.extend` only adds to the
+default scales, it never replaces them.
 
 Please do not commit `node_modules`, `dist`, `.env` files, logs or any
 credential.
