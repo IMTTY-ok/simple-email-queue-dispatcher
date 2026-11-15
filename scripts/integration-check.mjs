@@ -205,6 +205,11 @@ async function main() {
   );
   check(Boolean(admin.token), 'the first account was created and signed in');
 
+  // The profile (and with it the role) is created by the server on the
+  // first call. It has to exist before any role-protected endpoint is used.
+  const adminRegister = await post('/api/users/register', {}, { token: admin.token });
+  check(adminRegister.ok, 'the account profile was created', `status=${adminRegister.status}`);
+
   const reset = await post('/api/dispatch/reset', {}, { token: admin.token });
   check(reset.ok, 'reset returns 200', `status=${reset.status}`);
   check(reset.body?.stats?.total === 0, 'queue is empty after reset', `total=${reset.body?.stats?.total}`);
@@ -215,6 +220,9 @@ async function main() {
     'Integration Operator'
   );
   check(Boolean(operator.token), 'a second account was created and signed in');
+
+  const operatorRegister = await post('/api/users/register', {}, { token: operator.token });
+  check(operatorRegister.ok, 'the second account profile was created', `status=${operatorRegister.status}`);
 
   const adminProfile = await get('/api/users/me', { token: admin.token });
   check(adminProfile.body?.profile?.role === 'admin', 'the first account is the administrator', `role=${adminProfile.body?.profile?.role}`);
