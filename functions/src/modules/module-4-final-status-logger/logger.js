@@ -33,6 +33,33 @@ const { statusKey } = require('../module-1-email-queue-creator/queue.js');
 const ACTIVITY_TYPES = ['info', 'success', 'failure', 'retry', 'warning'];
 
 /**
+ * The finer-grained event kinds the dashboard renders as distinct
+ * indicators (Module 6 — Scheduled Delivery).
+ *
+ *   added      — the email entered the queue
+ *   scheduled  — the email was scheduled (or rescheduled)
+ *   dispatch   — a delivery attempt started
+ *   retry      — an attempt failed and will be repeated
+ *   delivered  — the mail server accepted the message
+ *   failed     — the delivery gave up
+ *   cancelled  — a scheduled delivery was called off
+ */
+const ACTIVITY_KINDS = [
+  'added', 'scheduled', 'dispatch', 'retry', 'delivered', 'failed', 'cancelled', 'info', 'warning',
+];
+
+/** The kind an activity entry gets when the caller does not name one. */
+function defaultKind(type) {
+  switch (type) {
+    case 'success': return 'delivered';
+    case 'failure': return 'failed';
+    case 'retry': return 'retry';
+    case 'warning': return 'warning';
+    default: return 'info';
+  }
+}
+
+/**
  * Append a global activity entry.
  * The history is bounded — the oldest entries are trimmed away.
  *
@@ -41,8 +68,10 @@ const ACTIVITY_TYPES = ['info', 'success', 'failure', 'retry', 'warning'];
  * @param {string} entry.message the human-readable text
  * @param {string} entry.type one of ACTIVITY_TYPES
  * @param {string|null} [entry.createdBy] the account the entry belongs to
+ * @param {string} [entry.kind] one of ACTIVITY_KINDS — the fine-grained
+ *   event the dashboard shows as its own indicator
  */
-async function pushActivity({ emailId, message, type, createdBy = null }) {
+async function pushActivity({ emailId, message, type, createdBy = null, kind = null }) {
   const seq = await store.claimSeq('activitySeq');
   const id = `ACT-${store.pad(seq)}`;
   const entry = {
@@ -51,6 +80,7 @@ async function pushActivity({ emailId, message, type, createdBy = null }) {
     emailId,
     message,
     type: ACTIVITY_TYPES.includes(type) ? type : 'info',
+    kind: ACTIVITY_KINDS.includes(kind) ? kind : defaultKind(type),
     createdBy,
     timestamp: store.stamp(),
   };
@@ -131,6 +161,7 @@ async function markSending(id, attempt = 1) {
     emailId: id,
     message: `${id} — dispatch started (attempt ${attempt} of ${email.retryLimit + 1})`,
     type: 'info',
+    kind: 'dispatch',
     createdBy: email.createdBy || null,
   });
   return email;
@@ -167,6 +198,7 @@ async function markRetrying(id, attempt) {
       emailId: id,
       message: `${id} — delivery failed, retrying (attempt ${attempt + 1})`,
       type: 'retry',
+      kind: 'retry',
       createdBy: email.createdBy || null,
     });
   }
@@ -188,6 +220,7 @@ async function markDelivered(id, attempt, smtpInfo) {
       emailId: id,
       message: `${id} — DELIVERED (accepted by mail server${accepted ? ` · ${accepted}` : ''})`,
       type: 'success',
+      kind: 'delivered',
       createdBy: email.createdBy || null,
     });
   }
@@ -207,6 +240,7 @@ async function markFailed(id, attempt, detail) {
       emailId: id,
       message: `${id} — FAILED (${detail || 'could not be sent'})`,
       type: 'failure',
+      kind: 'failed',
       createdBy: email.createdBy || null,
     });
   }
@@ -215,6 +249,8 @@ async function markFailed(id, attempt, detail) {
 
 module.exports = {
   ACTIVITY_TYPES,
+  ACTIVITY_KINDS,
+  defaultKind,
   pushActivity,
   listActivity,
   moveStatus,

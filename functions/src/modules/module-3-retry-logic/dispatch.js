@@ -83,8 +83,19 @@ async function waitPausable(ms) {
 /**
  * Process a single email: attempt delivery, retry on failure until the
  * retry limit is exhausted.
+ *
+ * @param {object} email the email document
+ * @param {object} config the resolved runtime configuration
+ * @param {object} [options]
+ * @param {boolean} [options.scheduled] set for a scheduled delivery
+ *   (Module 6 — Scheduled Delivery). A scheduled delivery is driven by the
+ *   server, not by the browser, so it ignores the interactive dispatcher's
+ *   running / paused flags. Everything else — the attempt budget, the retry
+ *   delay, the status transitions — is exactly the same code path an
+ *   immediate email takes.
  */
-async function processEmail(email, config) {
+async function processEmail(email, config, options = {}) {
+  const scheduled = options && options.scheduled === true;
   const totalAttempts = email.retryLimit + 1;
 
   // Resume where the interrupted pass left off — restarting at attempt 1
@@ -99,7 +110,7 @@ async function processEmail(email, config) {
   await logger.markSending(email.id, startAttempt);
 
   for (let attempt = startAttempt; attempt <= totalAttempts; attempt++) {
-    if (await dispatchStopped()) {
+    if (!scheduled && await dispatchStopped()) {
       await logger.requeueInFlight(email.id);
       return;
     }
@@ -117,7 +128,7 @@ async function processEmail(email, config) {
         const detail = `SMTP rejected recipient: ${rejected.join(', ')}`;
         await logger.logAttempt(email.id, attempt, 'FAILURE', detail);
         await logger.markFailed(email.id, attempt, detail);
-        await waitPausable(config.interEmailDelayMs);
+        await waitBetween(config.interEmailDelayMs, scheduled);
         return;
       }
 
@@ -137,13 +148,13 @@ async function processEmail(email, config) {
 
       if (isLast) {
         await logger.markFailed(email.id, attempt, detail);
-        await waitPausable(config.interEmailDelayMs);
+        await waitBetween(config.interEmailDelayMs, scheduled);
         return;
       }
 
       await logger.markRetrying(email.id, attempt);
-      await waitPausable(config.retryDelayMs);
-      if (await dispatchStopped()) {
+      await waitBetween(config.retryDelayMs, scheduled);
+      if (!scheduled && await dispatchStopped()) {
         await logger.requeueInFlight(email.id);
         return;
       }
@@ -152,8 +163,25 @@ async function processEmail(email, config) {
 }
 
 /**
+ * Wait before the next attempt.
+ *
+ * The interactive dispatcher can be paused mid-wait, so it wakes up early.
+ * A scheduled delivery has nobody to pause it and simply waits.
+ */
+async function waitBetween(ms, scheduled) {
+  if (scheduled) {
+    await sleep(ms);
+    return;
+  }
+  await waitPausable(ms);
+}
+
+/**
  * Reclaim emails that were left mid-flight by a killed invocation.
  * Without this an email could stay in SENDING forever.
+ *
+ * Scheduled deliveries (Module 6) are deliberately left alone: their
+ * lifecycle belongs to the scheduling engine, which re-arms them itself.
  */
 async function reapStale() {
   const staleBefore = new Date(Date.now() - STALE_AFTER_MS).toISOString();
@@ -164,6 +192,7 @@ async function reapStale() {
     .get();
   for (const doc of snap.docs) {
     const email = doc.data();
+    if (email.deliveryMode === 'SCHEDULED') continue;
     if (email.updatedAt < staleBefore) {
       await store.db.collection('emails').doc(email.id).set(
         { status: 'QUEUED', updatedAt: new Date().toISOString() },
@@ -302,6 +331,7 @@ module.exports = {
   sleep,
   dispatchStopped,
   waitPausable,
+  waitBetween,
   processEmail,
   reapStale,
   dispatchPass,

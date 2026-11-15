@@ -18,6 +18,9 @@
     "firestore": {
       "port": 8080
     },
+    "tasks": {
+      "port": 9499
+    },
     "ui": {
       "enabled": true,
       "port": 4000
