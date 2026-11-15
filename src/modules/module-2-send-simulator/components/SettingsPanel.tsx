@@ -92,17 +92,30 @@ export function SettingsPanel({
   // A ref (not a state flag) keeps later config changes from overwriting
   // whatever the user is currently typing.
   const seededRef = useRef(false);
+  // Whether the user has edited the dry-run switch / simulation mode in *this*
+  // panel. While untouched, the panel follows the server; while touched, the
+  // user's choice wins until it is saved.
+  const dryRunTouchedRef = useRef(false);
+  const simModeTouchedRef = useRef(false);
   useEffect(() => {
-    if (!config || seededRef.current) return;
-    seededRef.current = true;
-    setHost(config.smtp.host ?? '');
-    setPort(config.smtp.port ?? 587);
-    setSecure(config.smtp.secure ?? false);
-    setUser(config.smtp.user ?? '');
-    setFromName(config.smtp.fromName ?? 'Email Dispatcher');
-    setFromEmail(config.smtp.fromEmail ?? '');
-    setDryRun(config.dryRun ?? false);
-    setSimulationMode(config.simulationMode ?? 'AUTOMATIC');
+    if (!config) return;
+    if (!seededRef.current) {
+      seededRef.current = true;
+      setHost(config.smtp.host ?? '');
+      setPort(config.smtp.port ?? 587);
+      setSecure(config.smtp.secure ?? false);
+      setUser(config.smtp.user ?? '');
+      setFromName(config.smtp.fromName ?? 'Email Dispatcher');
+      setFromEmail(config.smtp.fromEmail ?? '');
+      setDryRun(config.dryRun ?? false);
+      setSimulationMode(config.simulationMode ?? 'AUTOMATIC');
+      return;
+    }
+    // The server is the single source of truth. If the dry-run switch or the
+    // simulation mode changed elsewhere (another panel, another tab, the
+    // server itself), follow it ΓÇö unless the user is mid-edit right here.
+    if (!dryRunTouchedRef.current) setDryRun(config.dryRun ?? false);
+    if (!simModeTouchedRef.current) setSimulationMode(config.simulationMode ?? 'AUTOMATIC');
   }, [config]);
 
   const show = (type: 'success' | 'error', message: string) => setFeedback({ type, message });
@@ -124,8 +137,11 @@ export function SettingsPanel({
         fromName,
         fromEmail,
       },
-      dryRun,
-      simulationMode,
+      // Only send the simulation fields when this panel actually renders
+      // them. The transport variant hides the dry-run switch, so sending its
+      // invisible copy would silently undo a change made in the simulation
+      // card ΓÇö the config would flip back to dry-run behind the user's back.
+      ...(showSimulation ? { dryRun, simulationMode } : {}),
     });
     setBusy(null);
 
@@ -139,6 +155,9 @@ export function SettingsPanel({
         ? `Settings saved, but connection check failed: ${res.verify.error}`
         : 'Settings saved.');
     setPass('');
+    // The saved values are now the baseline again.
+    dryRunTouchedRef.current = false;
+    simModeTouchedRef.current = false;
   };
 
   /** Save only the simulation settings (the "Module 2 + 3" card). */
@@ -152,6 +171,8 @@ export function SettingsPanel({
       return;
     }
     show('success', 'Simulation settings saved.');
+    dryRunTouchedRef.current = false;
+    simModeTouchedRef.current = false;
   };
 
   const handleTest = async () => {
@@ -218,7 +239,7 @@ export function SettingsPanel({
             <input
               type="checkbox"
               checked={dryRun}
-              onChange={(e) => { setDryRun(e.target.checked); clear(); }}
+              onChange={(e) => { dryRunTouchedRef.current = true; setDryRun(e.target.checked); clear(); }}
               aria-label="Enable dry-run mode"
               className="w-6 h-6 shrink-0 accent-[#16815B]"
             />
@@ -234,7 +255,7 @@ export function SettingsPanel({
                   <button
                     key={mode}
                     type="button"
-                    onClick={() => { setSimulationMode(mode); clear(); }}
+                    onClick={() => { simModeTouchedRef.current = true; setSimulationMode(mode); clear(); }}
                     disabled={!dryRun}
                     aria-pressed={active}
                     title={
