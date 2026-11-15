@@ -57,11 +57,19 @@ function validateEmail(input) {
   return { ok: true, value: { recipient, subject, message, senderName } };
 }
 
-/** Build a fresh email document (not yet written to Firestore). */
-async function makeEmail({ recipient, subject, message, senderName }, retryLimit, createdBy) {
+/**
+ * Build a fresh email document (not yet written to Firestore).
+ *
+ * `options.deliveryMode === 'SCHEDULED'` (Module 6 — Scheduled Delivery) adds
+ * the scheduling fields. The default stays exactly what it was: an immediate
+ * email that waits in the FIFO queue.
+ */
+async function makeEmail({ recipient, subject, message, senderName }, retryLimit, createdBy, options = {}) {
   const seq = await store.claimSeq('emailSeq');
   const now = store.stamp();
-  return {
+  const scheduled = options && options.deliveryMode === 'SCHEDULED';
+
+  const email = {
     id: `EML-${store.pad(seq)}`,
     seq,
     recipient,
@@ -71,7 +79,7 @@ async function makeEmail({ recipient, subject, message, senderName }, retryLimit
     // The account that created the email. The Firestore rules use this to keep
     // an operator inside their own queue entries.
     createdBy: createdBy || null,
-    status: 'QUEUED',
+    status: scheduled ? 'SCHEDULED' : 'QUEUED',
     attempts: 0,
     retries: 0,
     retryLimit,
@@ -81,7 +89,24 @@ async function makeEmail({ recipient, subject, message, senderName }, retryLimit
     socketErr: null,
     smtp: null,
     logs: [],
+    // Module 6 — Scheduled Delivery.
+    // `deliveryMode` tells the two pipelines apart: `IMMEDIATE` goes through
+    // the FIFO dispatcher, `SCHEDULED` waits for its own moment. A scheduled
+    // email is *not* `QUEUED`, so the FIFO dispatcher can never pick it up
+    // before its time.
+    deliveryMode: scheduled ? 'SCHEDULED' : 'IMMEDIATE',
   };
+
+  if (scheduled) {
+    email.scheduleVersion = Number(options.scheduleVersion) || 1;
+    email.scheduledAt = options.scheduledAt || null;
+    email.timezone = options.timezone || null;
+    email.scheduledTaskId = null;
+    email.dispatchedAt = null;
+    email.cancelledAt = null;
+  }
+
+  return email;
 }
 
 /**
@@ -90,12 +115,18 @@ async function makeEmail({ recipient, subject, message, senderName }, retryLimit
  * @param {object} input validated email fields
  * @param {number} retryLimit attempts allowed for this email
  * @param {string} [createdBy] uid of the account that created it
+ * @param {object} [options] `deliveryMode: 'SCHEDULED'` creates a scheduled
+ *   email instead of an immediate one (Module 6 — Scheduled Delivery).
  * @returns {Promise<{ email: object, position: number }>}
  */
-async function enqueue(input, retryLimit = 3, createdBy = null) {
-  const email = await makeEmail(input, retryLimit, createdBy);
+async function enqueue(input, retryLimit = 3, createdBy = null, options = {}) {
+  const email = await makeEmail(input, retryLimit, createdBy, options);
   await store.emailsCol().doc(email.id).set(email);
-  await store.bumpStats({ total: 1, queued: 1 });
+  // A scheduled email waits for its own moment — it is counted as
+  // `scheduled`, never as `queued`.
+  await store.bumpStats(
+    email.status === 'SCHEDULED' ? { total: 1, scheduled: 1 } : { total: 1, queued: 1 }
+  );
   const position = await queuedCount();
   return { email, position };
 }
@@ -131,6 +162,10 @@ async function hasQueued() {
 /**
  * The front of the queue — the next email to be dispatched (FIFO).
  * Returns `null` when the queue is empty.
+ *
+ * Only `QUEUED` emails are considered. A scheduled email (Module 6) has the
+ * status `SCHEDULED` until its moment arrives, so the FIFO dispatcher can
+ * never pick it up early.
  */
 async function nextQueued() {
   const snap = await store.emailsCol()
@@ -169,6 +204,9 @@ function statusKey(status) {
     case 'RETRYING': return 'retrying';
     case 'DELIVERED': return 'delivered';
     case 'FAILED': return 'failed';
+    // Module 6 — Scheduled Delivery
+    case 'SCHEDULED': return 'scheduled';
+    case 'CANCELLED': return 'cancelled';
     default: return null;
   }
 }

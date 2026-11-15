@@ -137,6 +137,8 @@ async function claimSeq(key) {
 function emptyStatsDoc() {
   return {
     total: 0, queued: 0, sending: 0, retrying: 0, delivered: 0, failed: 0,
+    // Module 6 — Scheduled Delivery
+    scheduled: 0, cancelled: 0,
     totalAttempts: 0, totalRetries: 0, updatedAt: stamp(),
   };
 }
@@ -193,6 +195,39 @@ async function deleteCollection(name) {
     snap.docs.forEach((d) => batch.delete(d.ref));
     await batch.commit();
   }
+}
+
+// ── serialisation ──────────────────────────────────────────────────────────────
+
+/**
+ * Convert a stored email document into the plain JSON shape the API returns.
+ *
+ * Firestore `Timestamp` values become ISO-8601 strings, so the dashboard, the
+ * REST API and the exported report all see the same representation. Fields
+ * that are absent stay `null` rather than disappearing.
+ *
+ * (Added for Module 6 — Scheduled Delivery, which stores `scheduledAt`,
+ * `dispatchedAt` and `cancelledAt` as Firestore Timestamps.)
+ */
+function serializeEmail(doc) {
+  if (!doc || typeof doc !== 'object') return doc;
+  const out = { ...doc };
+  for (const key of ['scheduledAt', 'dispatchedAt', 'cancelledAt']) {
+    const value = out[key];
+    if (value === null || value === undefined) {
+      out[key] = null;
+      continue;
+    }
+    if (typeof value === 'string') continue;
+    if (typeof value.toDate === 'function') {
+      out[key] = value.toDate().toISOString();
+      continue;
+    }
+    if (typeof value.seconds === 'number') {
+      out[key] = new Date(value.seconds * 1000).toISOString();
+    }
+  }
+  return out;
 }
 
 // ── dispatch lease ──────────────────────────────────────────────────────────────
@@ -271,6 +306,7 @@ module.exports = {
   countDocs,
   trimOldest,
   deleteCollection,
+  serializeEmail,
   claimDispatchLease,
   renewDispatchLease,
   releaseDispatchLease,

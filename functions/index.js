@@ -13,8 +13,12 @@
 
 const express = require('express');
 const cors = require('cors');
+const crypto = require('node:crypto');
 const functions = require('firebase-functions/v1');
 const { router } = require('./src/routes.js');
+const auth = require('./src/shared/auth.js');
+const schedulingEngine = require('./src/modules/module-6-scheduled-delivery/engine.js');
+const schedulingTasks = require('./src/modules/module-6-scheduled-delivery/tasks.js');
 
 /**
  * Browser origins allowed to call the API.
@@ -139,3 +143,132 @@ app.use((req, res) => {
 exports.backend = functions
   .runWith({ timeoutSeconds: 540, memory: '512MB' })
   .https.onRequest(app);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Module 6 — Scheduled Delivery
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// `scheduledDispatch` is the target of the Cloud Tasks queue. Google calls it
+// at the exact moment a scheduled email becomes due — no browser, no
+// dashboard, no laptop involved.
+//
+// The endpoint is public infrastructure, so every payload carries an
+// HMAC-SHA256 signature over `{emailId}:{scheduleVersion}:{taskId}` produced
+// with `SCHEDULE_TASK_SECRET`. A payload without a valid signature is
+// refused, and the secret is never stored in Firestore or returned to the
+// browser.
+
+/** Read the task payload — the runtime parses JSON, but be forgiving. */
+function readPayload(req) {
+  const body = req.body;
+  if (!body) return null;
+  if (typeof body === 'string') {
+    try {
+      return JSON.parse(body);
+    } catch {
+      return null;
+    }
+  }
+  if (Buffer.isBuffer(body)) {
+    try {
+      return JSON.parse(body.toString('utf8'));
+    } catch {
+      return null;
+    }
+  }
+  return typeof body === 'object' ? body : null;
+}
+
+exports.scheduledDispatch = functions
+  .runWith({ timeoutSeconds: 540, memory: '512MB' })
+  .https.onRequest(async (req, res) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+
+    if (req.method !== 'POST') {
+      res.status(405).json({ ok: false, error: 'Method not allowed.' });
+      return;
+    }
+
+    const payload = readPayload(req);
+    if (!schedulingTasks.verifySignature(payload)) {
+      res.status(403).json({ ok: false, error: 'Invalid task signature.' });
+      return;
+    }
+
+    try {
+      const result = await schedulingEngine.dispatchDueEmail({
+        emailId: payload.emailId,
+        scheduleVersion: Number(payload.scheduleVersion),
+      });
+
+      // A short, content-free record of what the task decided.
+      console.log(
+        `[scheduling] task ${payload.emailId} v${payload.scheduleVersion}: ${
+          result.dispatched ? 'dispatched' : `skipped (${result.reason})`
+        }`
+      );
+
+      // "Not due yet" must be retried, not swallowed: Cloud Tasks repeats the
+      // task until the scheduled moment has passed.
+      if (!result.dispatched && result.reason === 'not-due') {
+        res.status(503).json({ ok: false, error: 'Not due yet.', reason: result.reason });
+        return;
+      }
+
+      res.status(200).json({ ok: true, dispatched: result.dispatched, reason: result.reason });
+    } catch (err) {
+      console.error('[scheduling] dispatch failed:', err);
+      res.status(500).json({ ok: false, error: 'The scheduled delivery could not be processed.' });
+    }
+  });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The scheduler sweep.
+//
+// The Cloud Tasks queue is the primary trigger. This endpoint is the safety
+// net: it asks the server to look for scheduled emails whose moment has come
+// and to deliver them. It is what covers schedules further out than the
+// 30-day Cloud Tasks window, and it repairs a task that was lost.
+//
+// It accepts either
+//   • a normal Firebase ID token (the dashboard's "Run due now" button), or
+//   • the shared `SCHEDULE_SWEEP_TOKEN` (a Cloud Scheduler job).
+
+exports.scheduledSweep = functions
+  .runWith({ timeoutSeconds: 540, memory: '512MB' })
+  .https.onRequest(async (req, res) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+
+    if (req.method !== 'POST') {
+      res.status(405).json({ ok: false, error: 'Method not allowed.' });
+      return;
+    }
+
+    const expected = String(process.env.SCHEDULE_SWEEP_TOKEN || '').trim();
+    const provided = String(req.get('x-internal-sweep-token') || '').trim();
+
+    let authorised = false;
+    if (expected && provided && expected.length >= 16 && provided.length === expected.length) {
+      authorised = crypto.timingSafeEqual(Buffer.from(provided, 'utf8'), Buffer.from(expected, 'utf8'));
+    }
+
+    if (!authorised) {
+      const result = await auth.authenticate(req);
+      if (!result.ok) {
+        res.status(result.status).json({ ok: false, error: result.error });
+        return;
+      }
+      if (!result.role) {
+        res.status(403).json({ ok: false, error: 'No profile yet — finish signing in first.' });
+        return;
+      }
+    }
+
+    try {
+      const outcome = await schedulingEngine.sweepDueScheduledEmails();
+      res.status(200).json({ ok: true, ...outcome });
+    } catch (err) {
+      console.error('[scheduling] sweep failed:', err);
+      res.status(500).json({ ok: false, error: 'The scheduler sweep could not be completed.' });
+    }
+  });

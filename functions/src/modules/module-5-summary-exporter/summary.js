@@ -33,6 +33,9 @@ async function getStats() {
     delivered,
     failed,
     retrying,
+    // Module 6 — Scheduled Delivery
+    scheduled: d.scheduled || 0,
+    cancelled: d.cancelled || 0,
     totalAttempts: d.totalAttempts || 0,
     totalRetries: d.totalRetries || 0,
     successRate: processed > 0 ? Math.round((delivered / processed) * 100) : 0,
@@ -64,7 +67,7 @@ async function listReportedEmails(createdBy = null) {
     ? store.emailsCol().where('createdBy', '==', createdBy).orderBy('seq', 'asc')
     : store.emailsCol().orderBy('seq', 'asc');
   const snap = await query.get();
-  return snap.docs.map((d) => d.data());
+  return snap.docs.map((d) => store.serializeEmail(d.data()));
 }
 
 module.exports = {

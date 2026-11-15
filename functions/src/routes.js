@@ -39,6 +39,10 @@ const queue = require('./modules/module-1-email-queue-creator/queue.js');
 const dispatch = require('./modules/module-3-retry-logic/dispatch.js');
 const logger = require('./modules/module-4-final-status-logger/logger.js');
 const summary = require('./modules/module-5-summary-exporter/summary.js');
+// Module 6 — Scheduled Delivery
+const scheduling = require('./modules/module-6-scheduled-delivery/schedule.js');
+const schedulingEngine = require('./modules/module-6-scheduled-delivery/engine.js');
+const schedulingTasks = require('./modules/module-6-scheduled-delivery/tasks.js');
 
 const router = express.Router();
 
@@ -162,7 +166,7 @@ router.post('/api/config/test-send', requireAuth(), requireRole(ROLES.ADMIN), h(
 // ── Module 1 — Email Queue Creator ──────────────────────────────────────────────
 
 router.get('/api/emails', requireAuth(), requireRole(ROLES.ADMIN, ROLES.OPERATOR), h(async (req, res) => {
-  ok(res, await queue.listEmails(scopeOf(req)));
+  ok(res, (await queue.listEmails(scopeOf(req))).map((email) => store.serializeEmail(email)));
 }));
 
 router.get('/api/emails/:id', requireAuth(), requireRole(ROLES.ADMIN, ROLES.OPERATOR), h(async (req, res) => {
@@ -172,7 +176,7 @@ router.get('/api/emails/:id', requireAuth(), requireRole(ROLES.ADMIN, ROLES.OPER
   if (scope && email.createdBy && email.createdBy !== scope) {
     return fail(res, 403, 'That email belongs to another account.');
   }
-  ok(res, email);
+  ok(res, store.serializeEmail(email));
 }));
 
 router.post('/api/emails/batch', requireAuth(), requireRole(ROLES.ADMIN, ROLES.OPERATOR), h(async (req, res) => {
@@ -195,6 +199,7 @@ router.post('/api/emails/batch', requireAuth(), requireRole(ROLES.ADMIN, ROLES.O
       emailId: email.id,
       message: `${email.id} queued for delivery (position ${created.length})`,
       type: 'info',
+      kind: 'added',
       createdBy: email.createdBy,
     });
   }
@@ -211,10 +216,11 @@ router.post('/api/emails', requireAuth(), requireRole(ROLES.ADMIN, ROLES.OPERATO
     emailId: email.id,
     message: `${email.id} queued for delivery (position ${position})`,
     type: 'info',
+    kind: 'added',
     createdBy: email.createdBy,
   });
 
-  ok(res, { ok: true, email, position });
+  ok(res, { ok: true, email: store.serializeEmail(email), position });
 }));
 
 router.delete('/api/emails/:id', requireAuth(), requireRole(ROLES.ADMIN, ROLES.OPERATOR), h(async (req, res) => {
@@ -232,6 +238,106 @@ router.delete('/api/emails/:id', requireAuth(), requireRole(ROLES.ADMIN, ROLES.O
     createdBy: removed.createdBy,
   });
   ok(res, { ok: true, removed });
+}));
+
+// ── Module 6 — Scheduled Delivery ──────────────────────────────────────────────
+
+/**
+ * The operational status every signed-in account may read.
+ *
+ * The SMTP configuration is administrator-only, but the dashboard header has
+ * to show the real operating mode (DRY-RUN / LIVE) and the retry settings to
+ * everybody. This endpoint therefore exposes the *operational* values only —
+ * never the SMTP host, the mailbox or the password.
+ */
+router.get('/api/status', requireAuth(), requireRole(ROLES.ADMIN, ROLES.OPERATOR), h(async (req, res) => {
+  const config = await resolveConfig(store.db);
+  const dispatcher = await store.getDispatcherState();
+  ok(res, {
+    ok: true,
+    serverTime: new Date().toISOString(),
+    mode: config.dryRun ? 'DRY-RUN' : 'LIVE',
+    dryRun: config.dryRun,
+    simulationMode: config.simulationMode,
+    retryLimit: config.retryLimit,
+    retryDelayMs: config.retryDelayMs,
+    interEmailDelayMs: config.interEmailDelayMs,
+    smtpConfigured: publicConfig(config).smtpConfigured,
+    dispatcher,
+    scheduler: schedulingTasks.describe(),
+  });
+}));
+
+/** Every scheduled email the caller may see. */
+router.get('/api/scheduled-emails', requireAuth(), requireRole(ROLES.ADMIN, ROLES.OPERATOR), h(async (req, res) => {
+  ok(res, { ok: true, scheduled: await scheduling.listScheduledEmails(scopeOf(req)) });
+}));
+
+/**
+ * Schedule an email for later.
+ *
+ * The browser sends the *local* wall-clock time and the IANA timezone it was
+ * picked in; the server converts it to UTC and stores it as a Firestore
+ * Timestamp. The server's own clock is the only authority on whether the
+ * time has come.
+ */
+router.post('/api/scheduled-emails', requireAuth(), requireRole(ROLES.ADMIN, ROLES.OPERATOR), h(async (req, res) => {
+  const config = await resolveConfig(store.db);
+  const result = await scheduling.createScheduledEmail({
+    input: req.body || {},
+    retryLimit: config.retryLimit,
+    createdBy: req.user.uid,
+    dispatchUrl: schedulingTasks.dispatchUrlFromRequest(req),
+  });
+  if (!result.ok) return fail(res, result.status || 400, result.error);
+  ok(res, {
+    ok: true,
+    email: result.email,
+    scheduler: result.scheduler,
+    warning: result.warning,
+  });
+}));
+
+/**
+ * Run the server-side scheduler once, right now.
+ *
+ * The Cloud Tasks queue is the primary trigger; this endpoint is the safety
+ * net for schedules the queue cannot carry (further out than 30 days) and
+ * for tasks that were lost. It is the server that decides what is due and
+ * sends it — the browser only asks for a sweep.
+ */
+router.post('/api/scheduled-emails/sweep', requireAuth(), requireRole(ROLES.ADMIN, ROLES.OPERATOR), h(async (req, res) => {
+  const result = await schedulingEngine.sweepDueScheduledEmails();
+  ok(res, { ok: true, ...result });
+}));
+
+/** Cancel a scheduled email. */
+router.post('/api/scheduled-emails/:id/cancel', requireAuth(), requireRole(ROLES.ADMIN, ROLES.OPERATOR), h(async (req, res) => {
+  const result = await scheduling.cancelScheduledEmail({
+    id: req.params.id,
+    scope: scopeOf(req),
+  });
+  if (!result.ok) return fail(res, result.status || 400, result.error);
+  ok(res, { ok: true, email: result.email });
+}));
+
+/** Move a scheduled email to a new moment. */
+router.post('/api/scheduled-emails/:id/reschedule', requireAuth(), requireRole(ROLES.ADMIN, ROLES.OPERATOR), h(async (req, res) => {
+  const body = req.body || {};
+  const result = await scheduling.rescheduleScheduledEmail({
+    id: req.params.id,
+    scope: scopeOf(req),
+    scheduledAt: body.scheduledAt,
+    timezone: body.timezone,
+    dispatchUrl: schedulingTasks.dispatchUrlFromRequest(req),
+  });
+  if (!result.ok) return fail(res, result.status || 400, result.error);
+  ok(res, {
+    ok: true,
+    email: result.email,
+    scheduler: result.scheduler,
+    warning: result.warning,
+  });
 }));
 
 // ── Module 4 — Final Status Logger ─────────────────────────────────────────────

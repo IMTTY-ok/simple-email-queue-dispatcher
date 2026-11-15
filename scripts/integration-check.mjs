@@ -88,6 +88,77 @@ const post = (path, payload, options) => request('POST', path, payload, options)
 const del = (path, options) => request('DELETE', path, null, options);
 
 /**
+ * The wall-clock time of an instant in a given IANA zone, as
+ * `YYYY-MM-DDTHH:mm` — the shape the scheduling API expects.
+ *
+ * `withSeconds` adds the seconds, which the server accepts as well. The
+ * browser's time picker only offers minutes; the seconds are used by the
+ * integration check to schedule an email a few seconds ahead.
+ */
+function zonedWallClock(date, timeZone, withSeconds = false) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).formatToParts(date);
+  const field = {};
+  for (const part of parts) {
+    if (part.type !== 'literal') field[part.type] = part.value;
+  }
+  let hour = Number(field.hour);
+  if (hour === 24) hour = 0;
+  const pad = (n, w = 2) => String(n).padStart(w, '0');
+  const base = `${pad(field.year, 4)}-${pad(field.month)}-${pad(field.day)}T${pad(hour)}:${pad(field.minute)}`;
+  return withSeconds ? `${base}:${pad(field.second)}` : base;
+}
+
+/** The UTC instant a wall-clock time in a zone refers to. */
+function zonedToUtc(localDateTime, timeZone) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(localDateTime);
+  const [, y, mo, d, h, mi, se] = match;
+  const naive = Date.UTC(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi), Number(se || 0));
+  let guess = new Date(naive);
+  for (let i = 0; i < 3; i++) {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      hour12: false,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    }).formatToParts(guess);
+    const field = {};
+    for (const part of parts) {
+      if (part.type !== 'literal') field[part.type] = part.value;
+    }
+    let hour = Number(field.hour);
+    if (hour === 24) hour = 0;
+    const asUtc = Date.UTC(
+      Number(field.year),
+      Number(field.month) - 1,
+      Number(field.day),
+      hour,
+      Number(field.minute),
+      Number(field.second)
+    );
+    const offset = asUtc - Math.floor(guess.getTime() / 1000) * 1000;
+    const next = new Date(naive - offset);
+    if (next.getTime() === guess.getTime()) break;
+    guess = next;
+  }
+  return guess;
+}
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
  * Create (or sign in to) an account on the Auth emulator and return its ID
  * token. The Auth emulator's REST API needs any API key — it ignores it.
  */
@@ -391,6 +462,239 @@ async function main() {
   check(removed.ok, 'a queued email can be removed', `status=${removed.status}`);
   const afterRemove = await get('/api/stats', { token: admin.token });
   check(afterRemove.body?.total === all.body?.length - 1, 'statistics reflect the removal', `total=${afterRemove.body?.total}`);
+
+  // ── Module 6 - Scheduled Delivery ─────────────────────────────────────────
+  head('Module 6 - Scheduled Delivery');
+
+  await post('/api/dispatch/reset', {}, { token: admin.token });
+
+  // The scheduler status every signed-in account may read.
+  const status = await get('/api/status', { token: operator.token });
+  check(status.ok, 'an operator can read the operational status', `status=${status.status}`);
+  check(status.body?.mode === 'DRY-RUN' || status.body?.mode === 'LIVE', 'the status carries the operating mode', `mode=${status.body?.mode}`);
+  check(status.body?.scheduler !== undefined, 'the status describes the scheduler');
+  check(status.body?.smtp?.pass === undefined && status.body?.smtp === undefined, 'the status never exposes SMTP credentials');
+
+  // 1. schedule 30 minutes into the future
+  const in30 = new Date(Date.now() + 30 * 60 * 1000);
+  const slot30 = zonedWallClock(in30, 'Asia/Kolkata');
+  const schedule30 = await post('/api/scheduled-emails', {
+    recipient: 'student@example.com',
+    subject: 'Project Update',
+    message: 'Please check the latest project status.',
+    scheduledAt: slot30,
+    timezone: 'Asia/Kolkata',
+  }, { token: admin.token });
+  check(schedule30.ok, 'an email can be scheduled 30 minutes ahead', `status=${schedule30.status} error=${schedule30.body?.error}`);
+  check(schedule30.body?.email?.status === 'SCHEDULED', 'the scheduled email has the status SCHEDULED', `status=${schedule30.body?.email?.status}`);
+  check(schedule30.body?.email?.timezone === 'Asia/Kolkata', 'the requested timezone is kept for display', `tz=${schedule30.body?.email?.timezone}`);
+  check(Number(schedule30.body?.email?.scheduleVersion) === 1, 'the first revision is version 1', `v=${schedule30.body?.email?.scheduleVersion}`);
+
+  const scheduledId = schedule30.body?.email?.id;
+
+  // 2. schedule several hours ahead
+  const inHours = new Date(Date.now() + 5 * 60 * 60 * 1000);
+  const slotHours = zonedWallClock(inHours, 'UTC');
+  const scheduleHours = await post('/api/scheduled-emails', {
+    recipient: 'later@example.com',
+    subject: 'Later',
+    message: 'Hours later',
+    scheduledAt: slotHours,
+    timezone: 'UTC',
+  }, { token: admin.token });
+  check(scheduleHours.ok, 'an email can be scheduled several hours ahead', `status=${scheduleHours.status}`);
+  check(scheduleHours.body?.email?.status === 'SCHEDULED', 'the second scheduled email is SCHEDULED');
+
+  // 3. a past moment is refused
+  const pastSlot = zonedWallClock(new Date(Date.now() - 60 * 60 * 1000), 'UTC');
+  const past = await post('/api/scheduled-emails', {
+    recipient: 'past@example.com',
+    subject: 'Past',
+    message: 'Should never be accepted',
+    scheduledAt: pastSlot,
+    timezone: 'UTC',
+  }, { token: admin.token });
+  check(!past.ok, 'a schedule in the past is refused', `status=${past.status}`);
+  check(past.status === 400, 'the refusal is a 400', `status=${past.status}`);
+  check(/future/i.test(past.body?.error ?? ''), 'the refusal explains why', `error=${past.body?.error}`);
+
+  // 4. the task must not execute early
+  const earlySweep = await post('/api/scheduled-emails/sweep', {}, { token: admin.token });
+  check(earlySweep.ok, 'the scheduler sweep runs', `status=${earlySweep.status}`);
+  check(earlySweep.body?.dispatched === 0, 'nothing is delivered before its time', `dispatched=${earlySweep.body?.dispatched}`);
+  const stillScheduled = await get(`/api/emails/${scheduledId}`, { token: admin.token });
+  check(stillScheduled.body?.status === 'SCHEDULED', 'the email is still waiting', `status=${stillScheduled.body?.status}`);
+
+  // 6. a timezone other than Asia/Kolkata
+  const newYork = new Date(Date.now() + 4 * 60 * 60 * 1000);
+  const nySlot = zonedWallClock(newYork, 'America/New_York');
+  const nySchedule = await post('/api/scheduled-emails', {
+    recipient: 'ny@example.com',
+    subject: 'New York',
+    message: 'Another zone',
+    scheduledAt: nySlot,
+    timezone: 'America/New_York',
+  }, { token: admin.token });
+  check(nySchedule.ok, 'a schedule in another timezone is accepted', `status=${nySchedule.status} error=${nySchedule.body?.error}`);
+  check(nySchedule.body?.email?.timezone === 'America/New_York', 'the zone is kept', `tz=${nySchedule.body?.email?.timezone}`);
+
+  // 7. a daylight-saving zone: the UTC offset differs between summer and winter
+  const dstSummer = zonedWallClock(new Date(Date.UTC(2027, 6, 15, 12, 0)), 'Europe/Berlin');
+  const dstWinter = zonedWallClock(new Date(Date.UTC(2027, 0, 15, 12, 0)), 'Europe/Berlin');
+  const summerUtc = zonedToUtc(dstSummer, 'Europe/Berlin');
+  const winterUtc = zonedToUtc(dstWinter, 'Europe/Berlin');
+  const summerOffset = summerUtc.getTime() - Date.parse(`${dstSummer}:00Z`.replace('T', 'T'));
+  const winterOffset = winterUtc.getTime() - Date.parse(`${dstWinter}:00Z`.replace('T', 'T'));
+  check(
+    summerOffset !== winterOffset,
+    'a daylight-saving zone shifts its UTC offset',
+    `summerOffset=${summerOffset / 3600000}h winterOffset=${winterOffset / 3600000}h`
+  );
+
+  // 8. UTC storage and local display agree
+  const storedUtc = new Date(schedule30.body?.email?.scheduledAt);
+  const expectedUtc = zonedToUtc(slot30, 'Asia/Kolkata');
+  check(
+    Math.abs(storedUtc.getTime() - expectedUtc.getTime()) < 1000,
+    'the stored UTC instant matches the local wall-clock time',
+    `stored=${storedUtc.toISOString()} expected=${expectedUtc.toISOString()}`
+  );
+  const rendered = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Kolkata',
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(storedUtc);
+  check(rendered.length > 0, 'the schedule renders back in the requested zone', `rendered=${rendered}`);
+
+  // 9. cancel an upcoming scheduled email
+  const cancel = await post(`/api/scheduled-emails/${scheduledId}/cancel`, {}, { token: admin.token });
+  check(cancel.ok, 'a scheduled email can be cancelled', `status=${cancel.status}`);
+  check(cancel.body?.email?.status === 'CANCELLED', 'the email is CANCELLED', `status=${cancel.body?.email?.status}`);
+  const afterCancel = await post('/api/scheduled-emails/sweep', {}, { token: admin.token });
+  check(afterCancel.body?.dispatched === 0, 'a cancelled email is never delivered', `dispatched=${afterCancel.body?.dispatched}`);
+
+  // 10. reschedule an upcoming scheduled email
+  const rescheduleId = scheduleHours.body?.email?.id;
+  const newMoment = new Date(Date.now() + 90 * 60 * 1000);
+  const newSlot = zonedWallClock(newMoment, 'UTC');
+  const reschedule = await post(`/api/scheduled-emails/${rescheduleId}/reschedule`, {
+    scheduledAt: newSlot,
+    timezone: 'UTC',
+  }, { token: admin.token });
+  check(reschedule.ok, 'a scheduled email can be rescheduled', `status=${reschedule.status} error=${reschedule.body?.error}`);
+  check(Number(reschedule.body?.email?.scheduleVersion) === 2, 'the schedule version is bumped', `v=${reschedule.body?.email?.scheduleVersion}`);
+  check(reschedule.body?.email?.scheduledAt !== scheduleHours.body?.email?.scheduledAt, 'the scheduled moment changed');
+
+  // 11. the old task must not send after a reschedule
+  const staleSweep = await post('/api/scheduled-emails/sweep', {}, { token: admin.token });
+  check(staleSweep.body?.dispatched === 0, 'a rescheduled email is not delivered early', `dispatched=${staleSweep.body?.dispatched}`);
+
+  // 14. an operator cannot touch another account's scheduled email
+  const operatorCancel = await post(`/api/scheduled-emails/${rescheduleId}/cancel`, {}, { token: operator.token });
+  check(!operatorCancel.ok, "an operator cannot cancel another account's scheduled email", `status=${operatorCancel.status}`);
+  check(operatorCancel.status === 403, 'the refusal is a 403', `status=${operatorCancel.status}`);
+
+  const operatorSchedule = await post('/api/scheduled-emails', {
+    recipient: 'operator@example.com',
+    subject: 'Mine',
+    message: 'My own schedule',
+    scheduledAt: zonedWallClock(new Date(Date.now() + 60 * 60 * 1000), 'UTC'),
+    timezone: 'UTC',
+  }, { token: operator.token });
+  check(operatorSchedule.ok, 'an operator can schedule their own email', `status=${operatorSchedule.status}`);
+
+  const operatorSchedules = await get('/api/scheduled-emails', { token: operator.token });
+  check(operatorSchedules.ok, 'the scheduled list can be read', `status=${operatorSchedules.status}`);
+  check(
+    operatorSchedules.body?.scheduled?.every((e) => e.createdBy === operator.uid),
+    "an operator only sees their own scheduled emails",
+    `count=${operatorSchedules.body?.scheduled?.length}`
+  );
+
+  const adminSchedules = await get('/api/scheduled-emails', { token: admin.token });
+  check(adminSchedules.body?.scheduled?.length >= operatorSchedules.body?.scheduled?.length, 'an administrator sees the scheduled emails');
+
+  // 5. the server delivers it on time — with no browser involved.
+  //
+  // The Cloud Tasks queue calls the dispatch function at the scheduled
+  // moment. Nothing in the browser is asked to do anything: the check only
+  // waits and then looks at the document.
+  const soon = new Date(Date.now() + 6000);
+  const soonSlot = zonedWallClock(soon, 'UTC', true);
+  const soonSchedule = await post('/api/scheduled-emails', {
+    recipient: 'soon@example.com',
+    subject: 'Soon',
+    message: 'Due in a few seconds',
+    scheduledAt: soonSlot,
+    timezone: 'UTC',
+  }, { token: admin.token });
+  check(soonSchedule.ok, 'an email can be scheduled a few seconds ahead', `status=${soonSchedule.status} error=${soonSchedule.body?.error}`);
+  const schedulerKind = soonSchedule.body?.scheduler;
+  check(
+    schedulerKind === 'cloud-tasks' || schedulerKind === 'sweep',
+    'the schedule reports which mechanism will deliver it',
+    `scheduler=${schedulerKind}`
+  );
+
+  const taskQueueActive = status.body?.scheduler?.emulator === true;
+  if (taskQueueActive) {
+    check(schedulerKind === 'cloud-tasks', 'the task queue carries the delivery', `scheduler=${schedulerKind}`);
+  }
+
+  const soonId = soonSchedule.body?.email?.id;
+
+  // The task queue fires straight away in the emulator, so the handler
+  // answers "not due yet" until the scheduled moment has passed. Allow for
+  // the retry back-off of the queue.
+  await sleep(25000);
+
+  const byTask = await get(`/api/emails/${soonId}`, { token: admin.token });
+  if (taskQueueActive) {
+    check(byTask.body?.status === 'DELIVERED', 'the server delivered the email on its own', `status=${byTask.body?.status}`);
+    check(Boolean(byTask.body?.dispatchedAt), 'the actual dispatch time was recorded', `dispatchedAt=${byTask.body?.dispatchedAt}`);
+    check(byTask.body?.logs?.length === 1, 'exactly one delivery attempt was made', `logs=${byTask.body?.logs?.length}`);
+    check(byTask.body?.deliveryMode === 'SCHEDULED', 'it travelled through the scheduled pipeline', `mode=${byTask.body?.deliveryMode}`);
+  } else {
+    check(byTask.body?.status === 'SCHEDULED', 'without a task queue the email waits for the sweep', `status=${byTask.body?.status}`);
+  }
+
+  // 12. + 13. the task may be retried — it must never send twice.
+  const [sweepA, sweepB] = await Promise.all([
+    post('/api/scheduled-emails/sweep', {}, { token: admin.token }),
+    post('/api/scheduled-emails/sweep', {}, { token: admin.token }),
+  ]);
+  const totalDispatched = (sweepA.body?.dispatched ?? 0) + (sweepB.body?.dispatched ?? 0);
+  check(totalDispatched === 0, 'a delivered email is never sent again, even with two concurrent sweeps', `a=${sweepA.body?.dispatched} b=${sweepB.body?.dispatched}`);
+
+  const afterSweep = await get(`/api/emails/${soonId}`, { token: admin.token });
+  check(afterSweep.body?.logs?.length === 1, 'the email still has exactly one attempt', `logs=${afterSweep.body?.logs?.length}`);
+
+  // The statistics know about the scheduled emails.
+  const schedStats = await get('/api/stats', { token: admin.token });
+  check(schedStats.body?.scheduled !== undefined, 'the statistics carry the scheduled counter', `scheduled=${schedStats.body?.scheduled}`);
+  check(schedStats.body?.cancelled !== undefined, 'the statistics carry the cancelled counter', `cancelled=${schedStats.body?.cancelled}`);
+
+  // The report carries the scheduled delivery details.
+  const schedReport = await get('/api/report', { token: admin.token });
+  const schedRow = schedReport.body?.emails?.find((e) => e.id === soonId);
+  check(Boolean(schedRow), 'the report contains the scheduled email');
+  check(schedRow?.scheduledAt !== undefined, 'the report carries the scheduled moment', `scheduledAt=${schedRow?.scheduledAt}`);
+  check(schedRow?.deliveryMode === 'SCHEDULED', 'the report marks it as a scheduled delivery');
+
+  // The activity log records the scheduling events.
+  const schedActivity = await get('/api/activity', { token: admin.token });
+  check(
+    schedActivity.body?.some((e) => e.kind === 'scheduled'),
+    'a scheduled event is recorded in the activity log'
+  );
+  check(
+    schedActivity.body?.some((e) => e.kind === 'dispatch'),
+    'a dispatch event is recorded in the activity log'
+  );
+  check(
+    schedActivity.body?.some((e) => e.kind === 'cancelled'),
+    'a cancellation event is recorded in the activity log'
+  );
 
   // ── result ──────────────────────────────────────────────────────────────────
   head('Result');
