@@ -3,7 +3,7 @@ import { collection, doc, onSnapshot, orderBy, limit, query, where } from 'fireb
 import { db } from '../lib/firebase';
 import { api } from '../api/client';
 import { configFromDoc, statsFromDoc, toActivity, toEmail, toDispatcherState } from '../mappers';
-import type { ActivityEntry, DispatcherState, Email, ServerConfig, Stats } from '../types/email';
+import type { ActivityEntry, DispatcherState, Email, ServerConfig, ServerStatus, Stats } from '../types/email';
 import type { Role } from '../auth/useAuth';
 
 /**
@@ -24,6 +24,14 @@ export interface DashboardState {
   stats: Stats;
   dispatcher: DispatcherState;
   config: ServerConfig | null;
+  /**
+   * The operational status every signed-in account may read.
+   *
+   * The SMTP configuration is administrator-only, but the dashboard header
+   * has to show the real operating mode (DRY-RUN / LIVE) and the scheduler
+   * state to everybody.
+   */
+  status: ServerStatus | null;
 }
 
 /** The zeroed statistics used before the server sends its first snapshot. */
@@ -34,6 +42,8 @@ export const INITIAL_STATS: Stats = {
   delivered: 0,
   failed: 0,
   retrying: 0,
+  scheduled: 0,
+  cancelled: 0,
   totalAttempts: 0,
   totalRetries: 0,
   successRate: 0,
@@ -47,6 +57,7 @@ const DEFAULT_STATE: DashboardState = {
   stats: INITIAL_STATS,
   dispatcher: { running: false, paused: false },
   config: null,
+  status: null,
 };
 
 /**
@@ -161,12 +172,28 @@ export function useDashboardData(uid: string | null, role: Role | null) {
         });
     }
 
+    // The operational status — the operating mode and the scheduler state.
+    // Every signed-in account may read it. It is refreshed occasionally so
+    // the header never shows a stale mode; this is a status read, not the
+    // delivery mechanism.
+    const loadStatus = () => {
+      api<ServerStatus>('/api/status')
+        .then((status) => setState((p) => ({ ...p, connected: true, status })))
+        .catch(() => {
+          // The dashboard still works without it; the header falls back to
+          // the locally known configuration.
+        });
+    };
+    loadStatus();
+    const statusTimer = setInterval(loadStatus, 30000);
+
     return () => {
       emailUnsub();
       activityUnsub();
       statsUnsub();
       metaUnsub();
       configUnsub?.();
+      clearInterval(statusTimer);
     };
   }, [uid, isAdmin, markConnected, markOffline]);
 

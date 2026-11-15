@@ -65,6 +65,33 @@ describe('Module 5 — Summary Exporter / CSV', () => {
     const csv = exportCSV([makeEmail()]);
     assert.match(csv, /Attempt 1: SUCCESS/);
   });
+
+  it('keeps the original columns in place and appends the scheduling ones', () => {
+    const csv = exportCSV([makeEmail()]);
+    const header = csv.split('\n')[0];
+    // The columns that existed before Module 6 keep their position.
+    assert.match(header, /^"Email ID","Recipient","Subject"/);
+    assert.match(header, /"Attempt Logs","Delivery Mode","Scheduled For \(UTC\)","Timezone"/);
+  });
+
+  it('writes the scheduled delivery details of a scheduled email', () => {
+    const csv = exportCSV([
+      makeEmail({
+        status: 'SCHEDULED',
+        deliveryMode: 'SCHEDULED',
+        scheduledAt: '2026-11-15T03:30:00.000Z',
+        timezone: 'Asia/Kolkata',
+      }),
+    ]);
+    assert.match(csv, /"SCHEDULED"/);
+    assert.match(csv, /"2026-11-15T03:30:00.000Z"/);
+    assert.match(csv, /"Asia\/Kolkata"/);
+  });
+
+  it('marks an immediate email as immediate', () => {
+    const csv = exportCSV([makeEmail()]);
+    assert.match(csv, /"IMMEDIATE"/);
+  });
 });
 
 describe('Module 5 — Summary Exporter / JSON', () => {
@@ -95,5 +122,15 @@ describe('Module 5 — Summary Exporter / JSON', () => {
       totalAttempts: 0, totalRetries: 0, successRate: 0, failureRate: 0,
     }));
     assert.ok(!Number.isNaN(Date.parse(parsed.exportedAt)));
+  });
+
+  it('carries the scheduling counters', () => {
+    const parsed = JSON.parse(exportJSON([], {
+      total: 5, queued: 1, sending: 0, delivered: 3, failed: 1, retrying: 0,
+      scheduled: 2, cancelled: 1,
+      totalAttempts: 7, totalRetries: 2, successRate: 75, failureRate: 25,
+    }));
+    assert.equal(parsed.summary.scheduled, 2);
+    assert.equal(parsed.summary.cancelled, 1);
   });
 });

@@ -23,7 +23,7 @@
 
 1. [What it does](#1-what-it-does)
 2. [Screenshots](#2-screenshots)
-3. [The five modules](#3-the-five-modules)
+3. [The modules](#3-the-modules)
 4. [Tech stack](#4-tech-stack)
 5. [Quick start — 5 minutes](#5-quick-start--5-minutes)
 6. [Accounts and roles](#6-accounts-and-roles)
@@ -57,31 +57,45 @@
    │  Cloud Function          │──── SMTP (250 / 550)───►│  Your mail server      │
    │  `backend`               │                        │  Gmail · Outlook · …   │
    │  Express + Nodemailer    │◄───────────────────────│                        │
-   └──────────────────────────┘   550 / timeout        └────────────────────────┘
+   └───────────┬──────────────┘   550 / timeout        └────────────────────────┘
+               │
+               │  Cloud Tasks queue (Module 6)
+               ▼
+   ┌──────────────────────────┐
+   │  `scheduledDispatch`     │  fires at the scheduled moment
+   │  `scheduledSweep`        │  the safety net
+   └──────────────────────────┘
 ```
 
 The queue is strictly FIFO, every attempt is recorded, and a failed delivery is
 retried up to a configurable limit before it is marked `FAILED`.
 
+An email can be delivered **immediately** or **at a chosen moment**. The
+scheduled delivery is triggered by Google Cloud Tasks, so it goes out whether
+or not the dashboard is open.
+
 ---
 
 ## 2. Screenshots
 
-| Dashboard | Queue & processing | Dispatch in progress |
+| Dashboard | Queue & processing | Scheduled emails |
 | --- | --- | --- |
-| ![Dashboard](docs/screenshots/dashboard.png) | ![Desktop](docs/screenshots/desktop.png) | ![Retrying](docs/screenshots/dispatch-retrying.png) |
-| Live counters, the dry-run/live banner, and the whole board | FRONT → REAR queue, per-attempt badges | The retry engine working through a failed attempt |
+| ![Dashboard](docs/screenshots/dashboard.png) | ![Desktop](docs/screenshots/desktop.png) | ![Scheduled emails](docs/screenshots/scheduled-emails.png) |
+| Live counters, the dry-run/live banner, and the whole board | FRONT → REAR queue, per-attempt badges | The scheduled deliveries, their timezone and the time left |
 
 More captures live in [`docs/screenshots/`](docs/screenshots/).
 
 ---
 
-## 3. The five modules
+## 3. The modules
 
-The application is organised into the five modules of the product requirements
+The application is organised into the modules of the product requirements
 document. Each module owns its own UI, its own client hook and — where it needs
 one — its own server-side service. The frontend and the backend use the same
 folder names, so a feature is easy to follow across the whole stack.
+
+Module 6 — *Scheduled Delivery* — was added later and is described in
+[3.6](#6--scheduled-delivery).
 
 ### 1 · Email Queue Creator
 
@@ -141,6 +155,36 @@ folder names, so a feature is easy to follow across the whole stack.
   the error detail of every attempt
 
 `src/modules/module-5-summary-exporter/` · `functions/src/modules/module-5-summary-exporter/`
+
+### 6 · Scheduled Delivery
+
+*Server-side delivery of an email at a chosen moment.*
+
+- Schedule a single email for a future date, time and **IANA timezone**
+- Schedule many emails independently of one another
+- See every upcoming delivery, its remaining time and its status
+- Cancel a scheduled delivery, or move it to another moment
+- The delivery runs on the **server** — the dashboard, the browser and the
+  laptop may all be switched off when the moment arrives
+- The scheduled email travels through the **same** dispatcher, the **same**
+  retry engine and the **same** status log as an immediate one
+
+The trigger is a **Google Cloud Tasks** queue. The task carries only the
+email id and a schedule version; the email itself stays in Firestore, and the
+SMTP credentials are never part of the task.
+
+| Guarantee | How it is met |
+| --- | --- |
+| Never too early | The server compares its own clock with `scheduledAt` inside the claim transaction. A task that arrives early is answered with *503* and retried. |
+| Never twice | The claim is a Firestore transaction that moves the email from `SCHEDULED` to `SENDING`. Exactly one execution can win it. |
+| Never a cancelled email | A cancelled email is no longer `SCHEDULED`, so it cannot be claimed. |
+| Never a stale task | A reschedule bumps `scheduleVersion`; a task carrying the older version is refused. |
+| Never before the queue | A scheduled email is **not** `QUEUED`, so the FIFO dispatcher cannot pick it up early. |
+
+`src/modules/module-6-scheduled-delivery/` · `functions/src/modules/module-6-scheduled-delivery/`
+
+See [7.6](#76-scheduled-delivery--the-cloud-tasks-setup) for the setup and
+[14](#14-testing) for the tests.
 
 ---
 
@@ -366,43 +410,174 @@ These are committed and need no editing to run locally.
 | `firestore.rules` | The browser may only **read**; every write goes through the Cloud Function. `_secrets/*` is denied to browsers entirely | This is why the SMTP password can never leak into the client. It is also the app's main security boundary — read the [Security](#17-security) section |
 | `firestore.indexes.json` | The composite index the FIFO query needs (`status` + `seq`) | Without it Firestore rejects the "next queued email" query |
 
+### 7.6 Scheduled delivery — the Cloud Tasks setup
+
+The scheduled delivery trigger is a **Google Cloud Tasks** queue. Cloud Tasks
+calls the `scheduledDispatch` function at the exact moment a scheduled email
+becomes due — no browser, no dashboard, no laptop involved.
+
+**Nothing here is needed for the other five modules.** Without a task queue the
+scheduling feature still works, but the delivery then depends on the periodic
+*sweep* (see below).
+
+#### Environment variables
+
+| Variable | Required? | What to fill in | Why you need it |
+| --- | --- | --- | --- |
+| `SCHEDULE_TASK_SECRET` | **for Cloud Tasks** | A long random string, at least 16 characters | Signs every task payload. Without it nothing is queued — the feature fails **closed** rather than opening an unprotected endpoint. Generate one with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
+| `CLOUD_TASKS_LOCATION` | optional | `us-central1` | The region of the queue. It must be the same region as the function that receives the task. |
+| `CLOUD_TASKS_QUEUE` | optional | `email-scheduler` | The name of the queue. |
+| `SCHEDULED_DISPATCH_URL` | optional | `https://us-central1-<project>.cloudfunctions.net/scheduledDispatch` | Only needed when the function is not reachable at its default address. |
+| `SCHEDULE_SWEEP_TOKEN` | optional | A long random string | Lets an external cron call the `scheduledSweep` function with `X-Internal-Sweep-Token`. |
+| `SCHEDULE_SWEEP_BATCH` | optional | `5` | How many due emails one sweep delivers at once. |
+
+#### One-time provisioning
+
+```bash
+# 1. A Cloud Tasks queue in the same region as the function.
+gcloud tasks queues create email-scheduler \
+  --location=us-central1 \
+  --max-dispatches-per-second=10 \
+  --max-concurrent-dispatches=20
+
+# 2. The scheduler needs the right IAM role.
+gcloud projects add-iam-policy-binding <project-id> \
+  --member="serviceAccount:<project-id>@appspot.gserviceaccount.com" \
+  --role="roles/cloudtasks.enqueuer"
+
+# 3. The function needs to be able to reach the Cloud Tasks API.
+gcloud projects add-iam-policy-binding <project-id> \
+  --member="serviceAccount:<project-id>@appspot.gserviceaccount.com" \
+  --role="roles/cloudtasks.viewer"
+```
+
+The function creates the queue on demand if it is missing, so step 1 is a
+recommendation rather than a requirement.
+
+#### Billing and plan requirements
+
+> **Cloud Tasks requires the Blaze (pay-as-you-go) plan.** On the Spark
+> (free) plan the queue cannot be created and the scheduled feature has to
+> rely on the sweep. Firestore and the Cloud Functions themselves still work on
+> the free plan within their quotas.
+
+#### The sweep — the safety net
+
+`POST /api/scheduled-emails/sweep` asks the server to look for scheduled
+emails whose moment has come and to deliver them. It covers everything the
+task queue cannot: schedules further out than Cloud Tasks' 30-day window,
+tasks that were lost, and emails that were re-armed after an interrupted
+attempt.
+
+The **server** decides what is due and sends it — the browser only asks. To
+run it every minute, point a Cloud Scheduler job at it:
+
+```bash
+gcloud scheduler jobs create http email-scheduler-sweep \
+  --schedule="* * * * *" \
+  --uri="https://us-central1-<project-id>.cloudfunctions.net/scheduledSweep" \
+  --http-method=POST \
+  --headers="X-Internal-Sweep-Token=<your SCHEDULE_SWEEP_TOKEN>"
+```
+
+The dashboard's **Run due now** button calls the same endpoint.
+
 ---
 
 ## 8. How to use the dashboard
 
+The dashboard has two tabs: **Dashboard** (the five modules) and **Scheduled
+Emails** (the scheduled deliveries).
+
 ### The header
+
+| Element | What it shows |
+| --- | --- |
+| **SIMPLE EMAIL QUEUE DISPATCHER** | The application title. |
+| **SERVER: ONLINE / OFFLINE** | Whether the realtime connection to the backend is healthy. |
+| **MODE: DRY-RUN / LIVE** | The real operating mode of the installation — read from the server, never hardcoded. |
+| **IDLE / DISPATCHING / PAUSED** | What the dispatcher is doing right now. |
+
+### The control toolbar
 
 | Control | What it does |
 | --- | --- |
-| **Start** | Begins dispatching the queue. Becomes **Resume** while paused. |
+| **Start Dispatch** | Begins dispatching the queue. Becomes **Resume Dispatch** while paused. |
 | **Pause** | Stops after the current attempt. The in-flight email is **requeued**, so nothing is lost. |
-| **Reset** | Clears the queue, the activity log and the statistics. Asks for confirmation while a dispatch is live. |
-| **Server / Offline** badge | Green means the realtime connection to the backend is healthy. |
+| **Stop** | Ends the dispatcher run and leaves the queue untouched. |
+| **Reset Queue** | Clears the queue, the activity log and the statistics. **Always asks for confirmation** — it removes the queued emails. |
+
+The toolbar also carries the dry-run warning and the number of waiting emails.
 
 ### The mode banner
 
-The thin banner under the header tells you what will actually happen:
+The **Module 2 + 3** card states what will actually happen:
 
-- **DRY-RUN — delivery is simulated (Force Success)** — nothing leaves your machine.
-  Perfect for a demo or for setting the app up.
-- **LIVE — emails are sent for real via SMTP to `host:port`** — real email is being sent.
-  Check this line before you press Start.
+- **DRY-RUN mode is active; no external email is sent.** — nothing leaves
+  your machine. Perfect for a demo or for setting the app up.
+- **LIVE** — real email is being sent over SMTP. Check this line before you
+  press Start Dispatch.
 
 ### Adding email
 
-Fill in **Recipient Email**, **Subject** and **Message**; *Sender Name* is optional.
+Fill in **Recipient**, **Subject** and **Message**; *Sender Name* is optional.
 The form validates before sending and clears itself afterwards. The confirmation
 shows the new email's ID and its queue position.
+
+| Button | What it does |
+| --- | --- |
+| **Add to Queue** | The email waits in the FIFO queue until the dispatcher runs. |
+| **Send Now** | The email is queued *and* the dispatcher starts straight away. |
+| **Schedule for Later** | Opens the scheduling panel (see below). |
 
 ### The queue panel
 
 Every email is listed from **FRONT** (processed next) to **REAR** (processed last).
 Only *pending* emails carry a queue position — finished ones show their final
-status and their per-attempt badges (`A1 ✓`, `A2 ✗`, …).
+status and their per-attempt badges (`A1 ✓`, `A2 ✗`, …). A scheduled email
+shows a **SCHEDULED** badge and the moment it is due for.
+
+### Scheduling an email
+
+1. Fill in the recipient, subject and message.
+2. Press **Schedule for Later**.
+3. Pick the **date**, the **time** and the **timezone** (an IANA name such as
+   `Asia/Kolkata`). The panel shows the UTC instant the server will store.
+4. Press **Schedule Email**. A confirmation panel spells out the recipient,
+   the subject, the local time, the timezone, the UTC instant and the time
+   left.
+5. Press **Confirm schedule**.
+
+A time in the past is refused, on the server as well as in the browser.
+
+> **Daylight saving.** A wall-clock time can happen twice (the clocks go back)
+> or not at all (they go forward). An ambiguous time resolves to the earlier of
+> the two instants; a time that does not exist is moved past the gap. Both the
+> browser and the server apply the same rule, so they always agree.
+
+### The Scheduled Emails tab
+
+A table of every scheduled delivery the signed-in account may see — an
+operator only sees their own, an administrator sees all of them.
+
+| Column | What it shows |
+| --- | --- |
+| **Email ID** | The unique id (`EML-001`). |
+| **Recipient** | The destination address. |
+| **Subject** | The subject line. The message body is never in the table — open it with **View**. |
+| **Scheduled For** | The local date and time, plus the time left until it goes out. |
+| **Timezone** | The IANA zone the schedule was picked in. |
+| **Status** | `SCHEDULED`, `SENDING`, `RETRYING`, `DELIVERED`, `FAILED` or `CANCELLED`. |
+| **Actions** | **View**, **Reschedule** and **Cancel** — the last two only while the email is still `SCHEDULED`. |
+
+Search by id, recipient or subject, filter by status, filter by a date range,
+and page through a long list. **Run due now** asks the server to deliver
+everything that is due right now.
 
 ### The settings panel
 
-Fill in the SMTP server, port and credentials, then press **Save Config**.
+The **SMTP Configuration** card (administrators only) holds the server, port
+and credentials. Press **Save Config**.
 *Test Connection* opens a socket and authenticates without sending anything;
 *Send a test email* additionally delivers a real message to the address you type.
 
@@ -415,24 +590,28 @@ buttons become active:
 | `Force Success` | Always succeeds |
 | `Force Failure` | Always fails — **use this to demonstrate the retry engine** |
 
-The **Retry Engine** panel sets the retry limit and the processing speed. Press
-**Save Retry Settings** for them to take effect.
+The **Retry Limit** slider sets the retry limit and the **Dispatch Speed**
+buttons set the processing speed. Press **Save Retry Settings** for them to
+take effect.
 
 ### Dispatching
 
-Press **Start**. The Processing panel shows the email currently being sent, the
-attempt counter, a progress bar and the full attempt history. The Activity Log
-on the right records every transition, newest first.
+Press **Start Dispatch**. The Processing panel shows the email currently being
+sent, the attempt counter, a progress bar and the full attempt history. The
+activity log below it records every transition, newest first, with an indicator
+per kind of event (`ADDED`, `SCHEDULED`, `DISPATCH`, `RETRY`, `DELIVERED`,
+`FAILED`, `CANCELLED`).
 
 If you pause mid-run, the current email goes back to the queue with its attempt
 history intact — so pausing can never buy an email extra retries.
 
 ### Exporting
 
-The **Dispatch Summary & Export** panel lists every processed email with its
-final status. **CSV** gives you a spreadsheet of the run; **JSON** gives you the
+The **SUMMARY EXPORTER** card lists every processed email with its final
+status. **CSV** gives you a spreadsheet of the run; **JSON** gives you the
 complete report including the summary statistics, the SMTP response and the error
-detail of every attempt.
+detail of every attempt. Scheduled deliveries carry their scheduled time, their
+timezone and their dispatch time as extra columns.
 
 ---
 
@@ -512,24 +691,35 @@ simple-email-queue-dispatcher/
 │   │       │   └── ExportPanel.tsx        # summary, results table, export
 │   │       └── utils/exportReport.ts      # CSV / JSON serialisation
 │   │
+│   │   └── module-6-scheduled-delivery/   # Module 6
+│   │       ├── components/
+│   │       │   ├── SchedulePanel.tsx      # date / time / timezone + confirmation
+│   │       │   └── ScheduledEmailsPanel.tsx # the management table
+│   │       ├── constants/timezones.ts     # the IANA zones the picker offers
+│   │       ├── hooks/useScheduledEmails.ts # schedule / cancel / reschedule / sweep
+│   │       └── utils/time.ts              # the browser's mirror of the server's clock
+│   │
 │   └── shared/                            # used by more than one module
 │   └──     api/client.ts                  # apiUrl() + the authenticated fetch helper
 │   └──     auth/useAuth.ts                # sign in / sign up + the server-side role
 │   └──     components/
 │   └──         AdminPanel.tsx           # account & role management (admin only)
-│   └──         Header.tsx              # app chrome + dispatch controls
+│   └──         ControlToolbar.tsx       # start / pause / stop / reset
+│   └──         Header.tsx              # the navy header + the live state
 │   └──         LoginScreen.tsx        # the sign-in / sign-up screen
+│   └──         Panel.tsx              # the one card component everything uses
 │   └──     constants.ts                   # ports, simulation modes, demo data, roles
 │   └──     hooks/
 │   └──         useDashboardData.ts        # the Firestore realtime listeners
-│   └──         useEmailDispatcher.ts      # wires the state to the five modules
+│   └──         useEmailDispatcher.ts      # wires the state to the six modules
 │   └──     lib/firebase.ts                # centralised Firebase initialisation
 │   └──     mappers.ts                     # Firestore/REST -> domain types
 │   └──     types/email.ts                 # the shared domain model
 │   └──     utils/format.ts                # formatting + validation helpers
 │
 ├── functions/                             # Backend (Cloud Functions)
-│   ├── index.js                           # HTTPS bootstrap, CORS, rate limit
+│   ├── index.js                           # HTTPS bootstrap, CORS, rate limit,
+│   │                                      #   + scheduledDispatch + scheduledSweep
 │   ├── .env.example
 │   └── src/
 │       ├── routes.js                      # the REST API
@@ -539,6 +729,12 @@ simple-email-queue-dispatcher/
 │       │   ├── module-3-retry-logic/dispatch.js
 │       │   ├── module-4-final-status-logger/logger.js
 │       │   └── module-5-summary-exporter/summary.js
+│       │   └── module-6-scheduled-delivery/
+│       │       ├── clock.js               # timezone conversion + schedule validation
+│       │       ├── guard.js               # the "may this be sent?" rules
+│       │       ├── tasks.js               # the Cloud Tasks client
+│       │       ├── schedule.js            # create / cancel / reschedule
+│       │       └── engine.js              # the claim, the dispatch and the sweep
 │       └── shared/
 │           ├──  auth.js                    # token verification + role resolution
 │           ├── config.js                  # env + Firestore config layering
@@ -621,6 +817,19 @@ All endpoints live under the Cloud Function base URL.
 | GET | `/api/stats` | 5 | live statistics |
 | GET | `/api/report` | 5 | the full dispatch report (summary + rows) |
 | POST | `/api/dispatch/start`·`continue`·`pause`·`resume`·`stop`·`reset` | 3 | dispatcher lifecycle |
+| GET | `/api/status` | — | the operating mode, the retry settings and the scheduler state (no credentials) |
+| GET | `/api/scheduled-emails` | 6 | the scheduled deliveries the caller may see |
+| POST | `/api/scheduled-emails` | 6 | schedule an email for later |
+| POST | `/api/scheduled-emails/:id/cancel` | 6 | cancel a scheduled delivery |
+| POST | `/api/scheduled-emails/:id/reschedule` | 6 | move a scheduled delivery |
+| POST | `/api/scheduled-emails/sweep` | 6 | run the scheduler sweep now |
+
+Two more functions are deployed alongside `backend`:
+
+| Function | Who calls it | What it does |
+| --- | --- | --- |
+| `scheduledDispatch` | The Cloud Tasks queue | Delivers a scheduled email. Every payload carries an HMAC signature; an unsigned payload is refused. |
+| `scheduledSweep` | A Cloud Scheduler job, or the dashboard | Delivers every scheduled email whose moment has come. |
 
 Live dashboard data is **not** polled — it arrives through Firestore
 `onSnapshot` listeners.
@@ -649,7 +858,7 @@ interface Email {
   subject: string;
   message: string;
   senderName?: string | null;
-  status: 'QUEUED' | 'SENDING' | 'RETRYING' | 'DELIVERED' | 'FAILED';
+  status: 'QUEUED' | 'SCHEDULED' | 'SENDING' | 'RETRYING' | 'DELIVERED' | 'FAILED' | 'CANCELLED';
   attempts: number;        // SMTP attempts made
   retries: number;         // attempts - 1
   retryLimit: number;
@@ -659,8 +868,20 @@ interface Email {
   socketErr: string | null;               // last delivery error, if FAILED
   smtp: { accepted: string[]; response: string; messageId: string } | null;
   logs: { attempt: number; result: 'SUCCESS' | 'FAILURE'; detail?: string; timestamp: string }[];
+
+  // Module 6 — Scheduled Delivery
+  deliveryMode: 'IMMEDIATE' | 'SCHEDULED';
+  scheduledAt: string | null;      // the UTC moment it becomes due (ISO-8601)
+  timezone: string | null;         // the IANA zone the user picked, kept for display
+  scheduleVersion: number;         // bumped on every reschedule
+  scheduledTaskId: string | null;  // the Cloud Task carrying this revision
+  dispatchedAt: string | null;     // when the delivery actually started
+  cancelledAt: string | null;      // when the schedule was called off
 }
 ```
+
+`scheduledAt` and `dispatchedAt` are stored as **Firestore Timestamps**; the
+REST API and the dashboard expose them as ISO-8601 strings.
 
 Firestore layout:
 
@@ -678,9 +899,9 @@ Firestore layout:
 ## 14. Testing
 
 ```bash
-npm test                      # 40 unit tests, one file per module
+npm test                      # 72 unit tests, one file per module
 npm run test:rules            # 36 Firestore security-rule tests (needs the emulator)
-npm run test:integration      # 91 assertions against the running emulator
+npm run test:integration      # 142 assertions against the running emulator
 npm run lint                  # oxlint over src, functions, tests and scripts
 npm run typecheck             # tsc -b
 ```
