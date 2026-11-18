@@ -20,14 +20,21 @@ function fail(res, status, error) {
 }
 
 /**
- * Wrap an async route handler so a rejected promise becomes a 500 response
- * instead of an unhandled rejection.
+ * Wrap an async route handler so a rejected promise becomes an error
+ * response instead of an unhandled rejection.
+ *
+ * A thrown error may carry a `status` (a refused request is a 400, not a
+ * server fault), so the handler can explain what the client got wrong
+ * without inventing a second error channel.
  */
 function h(fn) {
   return (req, res) =>
     fn(req, res).catch((err) => {
       console.error('[functions] route error:', err);
-      if (!res.headersSent) fail(res, 500, humanError(err));
+      if (!res.headersSent) {
+        const status = Number(err && err.status) || 500;
+        fail(res, status, humanError(err));
+      }
     });
 }
 

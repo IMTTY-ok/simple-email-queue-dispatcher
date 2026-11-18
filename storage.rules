@@ -1,0 +1,63 @@
+rules_version = '2';
+
+// Cloud Storage rules for the attachment files of Module 1 — Email Queue Creator.
+//
+// The bytes of an attachment live in the bucket; only a small descriptor lives
+// on the email document in Firestore. These rules are the boundary around the
+// bucket:
+//
+//   • a signed-in account may write into its *own* folder and nowhere else
+//   • the write is capped in size, so one upload cannot fill the bucket
+//   • the content type has to be one a mail server accepts
+//   • an administrator may read anything (to inspect a delivery), an
+//     ordinary account may only read its own files
+//
+// The Cloud Function is the only writer of the Firestore documents, so a
+// client can never attach a file that the API would not accept anyway —
+// these rules are the second line of defence, not the first.
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // The role lives in Firestore and is written by the Cloud Function only.
+    function isAdmin() {
+      return isSignedIn()
+        && firestore.exists(/databases/(default)/documents/users/$(request.auth.uid))
+        && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // The largest single upload (16 MiB). A message is base64-encoded on its
+    // way through SMTP, so this stays well below the 25 MB mail-server limit.
+    function withinSizeLimit() {
+      return request.resource.size <= 16777216;
+    }
+
+    // Only the kinds of file a mail server accepts: documents, spreadsheets,
+    // presentations, plain text, images and video.
+    function isMailSafeType() {
+      return request.resource.contentType.matches(
+        'application/pdf|application/msword|application/vnd\\..*|application/rtf|' +
+        'application/x-rtf|text/.*|image/.*|video/.*'
+      );
+    }
+
+    // The attachments of one account. The first path segment is the uid of
+    // the account that owns the files.
+    match /attachments/{uid}/{allPaths=**} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+      allow write: if isSignedIn()
+        && request.auth.uid == uid
+        && withinSizeLimit()
+        && isMailSafeType();
+      allow delete: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+    }
+
+    // Everything else is denied.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

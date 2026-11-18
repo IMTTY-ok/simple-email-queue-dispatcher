@@ -36,6 +36,7 @@ const auth = require('./shared/auth.js');
 const { resolveConfig, applyConfigAsync, publicConfig, syncPasswordFlag, ensureSeededConfig } = require('./shared/config.js');
 const { verifyConnection, sendSingleMail, resetTransport, humanError } = require('./modules/module-2-send-simulator/simulator.js');
 const queue = require('./modules/module-1-email-queue-creator/queue.js');
+const attachments = require('./modules/module-1-email-queue-creator/attachments.js');
 const dispatch = require('./modules/module-3-retry-logic/dispatch.js');
 const logger = require('./modules/module-4-final-status-logger/logger.js');
 const summary = require('./modules/module-5-summary-exporter/summary.js');
@@ -57,6 +58,16 @@ const requireRole = auth.requireRole;
  */
 function scopeOf(req) {
   return req.user.role === ROLES.ADMIN ? null : req.user.uid;
+}
+
+/**
+ * A short note about the files an email carries, for the activity log.
+ * "· 2 attachments" — nothing when the email travels without files.
+ */
+function attachmentNote(email) {
+  const count = Array.isArray(email.attachments) ? email.attachments.length : 0;
+  if (count === 0) return '';
+  return ` · ${count} attachment${count === 1 ? '' : 's'}`;
 }
 
 // ── health ──────────────────────────────────────────────────────────────────────
@@ -165,6 +176,18 @@ router.post('/api/config/test-send', requireAuth(), requireRole(ROLES.ADMIN), h(
 
 // ── Module 1 — Email Queue Creator ──────────────────────────────────────────────
 
+/**
+ * The attachment rules — which file types may be attached, how large a file
+ * and a bundle may be, and which bucket the files live in.
+ *
+ * The browser asks for these before it offers a file, so the rules it shows
+ * are the rules the server enforces. The server validates every request
+ * again regardless.
+ */
+router.get('/api/attachments/config', requireAuth(), requireRole(ROLES.ADMIN, ROLES.OPERATOR), h(async (req, res) => {
+  ok(res, { ok: true, attachments: attachments.describe() });
+}));
+
 router.get('/api/emails', requireAuth(), requireRole(ROLES.ADMIN, ROLES.OPERATOR), h(async (req, res) => {
   ok(res, (await queue.listEmails(scopeOf(req))).map((email) => store.serializeEmail(email)));
 }));
@@ -191,13 +214,13 @@ router.post('/api/emails/batch', requireAuth(), requireRole(ROLES.ADMIN, ROLES.O
 
   const created = [];
   for (const item of items) {
-    const validation = queue.validateEmail(item);
+    const validation = queue.validateEmail(item, req.user.uid);
     if (!validation.ok) return fail(res, 400, validation.error);
     const { email } = await queue.enqueue(validation.value, config.retryLimit, req.user.uid);
     created.push(email);
     await logger.pushActivity({
       emailId: email.id,
-      message: `${email.id} queued for delivery (position ${created.length})`,
+      message: `${email.id} queued for delivery (position ${created.length})${attachmentNote(email)}`,
       type: 'info',
       kind: 'added',
       createdBy: email.createdBy,
@@ -207,14 +230,14 @@ router.post('/api/emails/batch', requireAuth(), requireRole(ROLES.ADMIN, ROLES.O
 }));
 
 router.post('/api/emails', requireAuth(), requireRole(ROLES.ADMIN, ROLES.OPERATOR), h(async (req, res) => {
-  const validation = queue.validateEmail(req.body || {});
+  const validation = queue.validateEmail(req.body || {}, req.user.uid);
   if (!validation.ok) return fail(res, 400, validation.error);
 
   const config = await resolveConfig(store.db);
   const { email, position } = await queue.enqueue(validation.value, config.retryLimit, req.user.uid);
   await logger.pushActivity({
     emailId: email.id,
-    message: `${email.id} queued for delivery (position ${position})`,
+    message: `${email.id} queued for delivery (position ${position})${attachmentNote(email)}`,
     type: 'info',
     kind: 'added',
     createdBy: email.createdBy,
