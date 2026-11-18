@@ -56,7 +56,7 @@ def shot_panel(page, title_substr: str, filename: str) -> bool:
         print(f"  skip (not found): {title_substr}")
         return False
     # walk up to the nearest .card ancestor
-    card = loc.locator("xpath=ancestor::div[contains(@class,'card')][1]")
+    card = loc.locator("xpath=ancestor::*[contains(concat(' ', normalize-space(@class), ' '), ' card ')][1]")
     if not card.count():
         card = loc
     card.screenshot(path=str(OUT / filename))
@@ -90,7 +90,7 @@ def main() -> int:
         # the admin panel (only present for administrators)
         admin = page.locator("text=Accounts & Roles").first
         if admin.count():
-            card = admin.locator("xpath=ancestor::div[contains(@class,'card')][1]")
+            card = admin.locator("xpath=ancestor::*[contains(concat(' ', normalize-space(@class), ' '), ' card ')][1]")
             if card.count():
                 card.screenshot(path=str(OUT / "module-admin-accounts-roles.png"))
                 print("  saved: module-admin-accounts-roles.png")
