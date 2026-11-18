@@ -83,12 +83,27 @@ file. See [3.1](#31-attachments).
 
 ## 2. Screenshots
 
-| Dashboard | Queue & processing | Scheduled emails |
-| --- | --- | --- |
-| ![Dashboard](docs/screenshots/dashboard.png) | ![Desktop](docs/screenshots/desktop.png) | ![Scheduled emails](docs/screenshots/scheduled-emails.png) |
-| Live counters, the dry-run/live banner, and the whole board | FRONT → REAR queue, per-attempt badges | The scheduled deliveries, their timezone and the time left |
+| Dashboard | Scheduled emails |
+| --- | --- |
+| ![Dashboard](docs/screenshots/dashboard.png) | ![Scheduled emails](docs/screenshots/scheduled-emails.png) |
+| The whole board — header, the five modules, the queue and the activity log | The scheduled deliveries, their timezone and the time left |
 
-More captures live in [`docs/screenshots/`](docs/screenshots/).
+### Module by module
+
+Every module of the dashboard, captured on its own:
+
+| Module 1 · Email Queue Creator | Module 2 + 3 · Simulation & Retry |
+| --- | --- |
+| ![Module 1](docs/screenshots/module-1-email-queue-creator.png) | ![Module 2 + 3](docs/screenshots/module-2-3-simulation-retry.png) |
+| The composer with the attachment picker and the FRONT → REAR queue | SMTP transport, simulation mode, retry settings and the dispatcher |
+
+| Module 4 · Processing & Activity | Module 5 · Summary Exporter |
+| --- | --- |
+| ![Module 4](docs/screenshots/module-4-processing-activity.png) | ![Module 5](docs/screenshots/module-5-summary-exporter.png) |
+| The live attempt, per-attempt badges and the activity log | Statistics, success rates and the export panel |
+
+More captures (mobile viewports, the sign-in screen, the scheduling panel)
+live in [`docs/screenshots/`](docs/screenshots/).
 
 ---
 
@@ -1037,6 +1052,7 @@ Two optional browser checks (they need `pip install playwright` and
 python scripts/browser_check.py     # signs in, renders the dashboard, captures screenshots
 python scripts/responsive_check.py  # layout + accessibility sweep over 4 breakpoints
 python scripts/attachment_check.py  # attaches a file, queues it, delivers it
+python scripts/screenshot_modules.py # captures the dashboard module by module
 ```
 
 ---
