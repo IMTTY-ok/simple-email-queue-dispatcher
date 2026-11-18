@@ -94,23 +94,6 @@ The whole board at a glance: the header with its live state, the control
 toolbar, the five modules and the activity log. The queue is visualised from
 FRONT to REAR, and a queued email can be removed with one click.
 
-### Module by module
-
-Every module on its own, so the responsibilities stay clear:
-
-| Module 1 · Email Queue Creator | Module 2 + 3 · Simulation & Retry |
-| --- | --- |
-| ![Module 1](docs/screenshots/module-1-email-queue-creator.png) | ![Module 2 + 3](docs/screenshots/module-2-3-simulation-retry.png) |
-| The composer — recipient, subject, message, sender name and the **attachment picker** — followed by the FRONT → REAR queue with per-email attachment chips | SMTP transport, simulation mode, retry limit and processing speed, plus the dispatcher controls |
-
-| Module 4 · Processing & Activity | Module 5 · Summary Exporter |
-| --- | --- |
-| ![Module 4](docs/screenshots/module-4-processing-activity.png) | ![Module 5](docs/screenshots/module-5-summary-exporter.png) |
-| The email being processed, its attempt history and the live activity log | Statistics, success rates and the export panel (CSV / JSON) |
-
-The administrator's **Accounts & Roles** panel lives in the same column as
-Module 1 — its own screenshot is in [`docs/screenshots/`](docs/screenshots/).
-
 ### Scheduled deliveries
 
 ![Scheduled emails](docs/screenshots/scheduled-emails.png)
@@ -118,11 +101,6 @@ Module 1 — its own screenshot is in [`docs/screenshots/`](docs/screenshots/).
 The Scheduled Emails tab: every delivery, its timezone, the local time it is
 due for, the UTC instant and the time left. A scheduled email can be
 cancelled or rescheduled from this table.
-
-### Mobile
-
-The layout collapses to a single column on a phone — no horizontal overflow,
-no clipped content, the queue and the activity log stay scrollable.
 
 More captures (sign-in screen, mobile viewports, the scheduling panel and
 the responsive sweep) live in [`docs/screenshots/`](docs/screenshots/).
