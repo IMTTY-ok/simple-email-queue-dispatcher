@@ -2,6 +2,7 @@ import { initializeApp } from 'firebase/app';
 import { connectAuthEmulator, getAuth } from 'firebase/auth';
 import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
 import { getAnalytics } from 'firebase/analytics';
+import { connectStorageEmulator, getStorage, type FirebaseStorage } from 'firebase/storage';
 
 /**
  * Centralised Firebase initialisation.
@@ -49,4 +50,32 @@ if (typeof window !== 'undefined') {
   } catch {
     // analytics is optional
   }
+}
+
+// ── Cloud Storage — the attachment bucket ─────────────────────────────────────
+//
+// The bucket name is not hard-coded here: the server tells the browser which
+// bucket holds the attachment files (`GET /api/attachments/config`), so the
+// two sides can never disagree about it. The instance is therefore created
+// on first use, once the name is known.
+
+let storageInstance: FirebaseStorage | null = null;
+let storageEmulatorConnected = false;
+
+/**
+ * Firebase Storage — the bucket the attachment files live in.
+ *
+ * @param bucket the bucket name, as reported by the server
+ */
+export function getAttachmentStorage(bucket?: string): FirebaseStorage {
+  if (storageInstance) return storageInstance;
+
+  storageInstance = bucket ? getStorage(app, `gs://${bucket}`) : getStorage(app);
+
+  if (import.meta.env.DEV && !storageEmulatorConnected) {
+    connectStorageEmulator(storageInstance, '127.0.0.1', 9199);
+    storageEmulatorConnected = true;
+  }
+
+  return storageInstance;
 }

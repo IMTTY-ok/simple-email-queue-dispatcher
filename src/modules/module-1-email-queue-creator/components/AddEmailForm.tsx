@@ -12,8 +12,10 @@ import {
   CalendarClock,
   Loader2,
 } from 'lucide-react';
-import type { EmailFormData, ScheduleResult } from '../../../shared/types/email';
+import type { Attachment, EmailFormData, ScheduleResult } from '../../../shared/types/email';
 import { SchedulePanel } from '../../module-6-scheduled-delivery/components/SchedulePanel';
+import { useAttachments } from '../hooks/useAttachments';
+import { AttachmentPicker } from './AttachmentPicker';
 
 interface AddEmailFormProps {
   onAdd: (form: EmailFormData) => Promise<{ success: boolean; error?: string; emailId?: string; position?: number }>;
@@ -113,6 +115,7 @@ export function AddEmailForm({ onAdd, onSendNow, onSchedule, disabled }: AddEmai
   } | null>(null);
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [scheduleOpen, setScheduleOpen] = useState(false);
+  const attachments = useAttachments();
 
   const isDisabled = disabled || submitting !== null;
 
@@ -145,10 +148,33 @@ export function AddEmailForm({ onAdd, onSendNow, onSchedule, disabled }: AddEmai
   };
 
   /** Empty the form. The feedback is kept unless the caller says otherwise. */
-  const resetForm = (clearFeedback = true) => {
+  const resetForm = (clearFeedback = true, discardAttachments = false) => {
     setForm(EMPTY_FORM);
     if (clearFeedback) setFeedback(null);
     setTouched({});
+    // The files that travelled with a delivered email must stay in storage;
+    // the ones the user threw away must not.
+    if (discardAttachments) attachments.clear();
+    else attachments.reset();
+  };
+
+  /**
+   * Wait for the attachment uploads and hand back the descriptors.
+   *
+   * Returns `null` when a file could not be attached — the email is not
+   * created in that case, because a message that silently loses a file is
+   * worse than one that was not sent.
+   */
+  const prepareAttachments = async (): Promise<Attachment[] | null> => {
+    const { attachments: files, errors } = await attachments.whenReady();
+    if (errors.length > 0) {
+      setFeedback({
+        type: 'error',
+        message: `${errors.length} file(s) could not be attached. Remove them and try again.`,
+      });
+      return null;
+    }
+    return files;
   };
 
   const handleAdd = async (e: React.FormEvent) => {
@@ -159,12 +185,18 @@ export function AddEmailForm({ onAdd, onSendNow, onSchedule, disabled }: AddEmai
       return;
     }
     setSubmitting('add');
-    const result = await onAdd(form);
+    const files = await prepareAttachments();
+    if (!files) {
+      setSubmitting(null);
+      return;
+    }
+    const result = await onAdd({ ...form, attachments: files });
     setSubmitting(null);
     if (result.success) {
       resetForm(false);
       setFeedback({ type: 'success', message: 'Email added to the queue', emailId: result.emailId, position: result.position });
     } else {
+      // The files stay: the user only has to fix the form and try again.
       setFeedback({ type: 'error', message: result.error ?? 'Failed to add email.' });
     }
   };
@@ -176,7 +208,12 @@ export function AddEmailForm({ onAdd, onSendNow, onSchedule, disabled }: AddEmai
       return;
     }
     setSubmitting('send');
-    const result = await onSendNow(form);
+    const files = await prepareAttachments();
+    if (!files) {
+      setSubmitting(null);
+      return;
+    }
+    const result = await onSendNow({ ...form, attachments: files });
     setSubmitting(null);
     if (result.success) {
       resetForm(false);
@@ -192,7 +229,12 @@ export function AddEmailForm({ onAdd, onSendNow, onSchedule, disabled }: AddEmai
     timezone: string
   ): Promise<ScheduleResult> => {
     setSubmitting('schedule');
-    const result = await onSchedule(scheduledForm, scheduledAt, timezone);
+    const files = await prepareAttachments();
+    if (!files) {
+      setSubmitting(null);
+      return { success: false, error: 'The attachments could not be prepared.' };
+    }
+    const result = await onSchedule({ ...scheduledForm, attachments: files }, scheduledAt, timezone);
     setSubmitting(null);
     if (result.success) {
       // The scheduling panel stays open — it shows the confirmation of what
@@ -260,6 +302,20 @@ export function AddEmailForm({ onAdd, onSendNow, onSchedule, disabled }: AddEmai
           onChange={(v) => handleChange('message', v)}
           onBlur={() => setTouched((p) => ({ ...p, message: true }))}
         />
+
+        {/* The files that travel with the message. */}
+        <AttachmentPicker
+          rules={attachments.rules}
+          rulesError={attachments.rulesError}
+          items={attachments.items}
+          uploading={attachments.uploading}
+          totalBytes={attachments.totalBytes}
+          disabled={isDisabled}
+          onAddFiles={attachments.addFiles}
+          onRemove={attachments.removeItem}
+          onClear={attachments.clear}
+        />
+
         <Field
           id="senderName" label="Sender name"
           icon={<User size={11} />}
@@ -314,7 +370,7 @@ export function AddEmailForm({ onAdd, onSendNow, onSchedule, disabled }: AddEmai
 
           <button
             type="button"
-            onClick={() => resetForm()}
+            onClick={() => resetForm(true, true)}
             disabled={isDisabled}
             className="btn btn-ghost"
             aria-label="Clear the form"

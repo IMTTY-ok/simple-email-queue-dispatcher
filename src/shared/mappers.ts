@@ -87,6 +87,9 @@ export function toEmail(doc: Record<string, unknown>): Email {
   return {
     ...email,
     logs: Array.isArray(email.logs) ? email.logs : [],
+    // The attachment descriptors are optional — an email without files simply
+    // has no `attachments` field.
+    attachments: Array.isArray(email.attachments) ? email.attachments : [],
     // Module 6 — Scheduled Delivery: the server stores the schedule as a
     // Firestore Timestamp; the dashboard always works with ISO strings.
     scheduledAt: toIsoString(email.scheduledAt),
@@ -120,5 +123,6 @@ export function toEmailFormData(form: EmailFormData): EmailFormData {
     subject: form.subject.trim(),
     message: form.message.trim(),
     senderName: form.senderName.trim(),
+    attachments: Array.isArray(form.attachments) ? form.attachments : [],
   };
 }

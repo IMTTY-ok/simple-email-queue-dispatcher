@@ -106,6 +106,23 @@ export interface ServerConfig {
 
 // ── Module 1 — Email Queue Creator ─────────────────────────────────────────────
 
+/**
+ * One file that travels with an email.
+ *
+ * The bytes live in Cloud Storage — only this small descriptor travels with
+ * the email document.
+ */
+export interface Attachment {
+  /** The file name the recipient sees. */
+  name: string;
+  /** The size of the file in bytes. */
+  size: number;
+  /** The content type the server sends the file with. */
+  contentType: string;
+  /** Where the file lives in Cloud Storage. */
+  path: string;
+}
+
 /** One email task as stored by the server and streamed to the dashboard. */
 export interface Email {
   id: string;
@@ -114,6 +131,8 @@ export interface Email {
   subject: string;
   message: string;
   senderName?: string | null;
+  /** The files that travel with this email. */
+  attachments?: Attachment[];
   status: EmailStatus;
   attempts: number;
   retries: number;
@@ -154,6 +173,31 @@ export interface EmailFormData {
   subject: string;
   message: string;
   senderName: string;
+  /** The files to travel with the email (descriptors, not bytes). */
+  attachments?: Attachment[];
+}
+
+/**
+ * The attachment rules the server enforces.
+ *
+ * The browser asks the server for these before it offers a file, so the
+ * limits it shows are the limits the server applies.
+ */
+export interface AttachmentRules {
+  /** The Cloud Storage bucket the files live in. */
+  bucket: string;
+  /** How many files one email may carry. */
+  maxCount: number;
+  /** The largest single file, in bytes. */
+  maxFileBytes: number;
+  /** The largest total of all files of one email, in bytes. */
+  maxTotalBytes: number;
+  /** The extensions the server accepts. */
+  extensions: string[];
+  /** The content type the server sends each extension with. */
+  contentTypes: Record<string, string>;
+  /** The folder every attachment lives in. */
+  uploadRoot: string;
 }
 
 // ── Module 3 — dispatcher state ────────────────────────────────────────────────

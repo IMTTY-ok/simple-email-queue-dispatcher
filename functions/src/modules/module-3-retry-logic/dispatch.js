@@ -36,6 +36,7 @@ const { FieldValue } = require('firebase-admin/firestore');
 const { resolveConfig } = require('../../shared/config.js');
 const store = require('../../shared/store.js');
 const queue = require('../module-1-email-queue-creator/queue.js');
+const attachments = require('../module-1-email-queue-creator/attachments.js');
 const simulator = require('../module-2-send-simulator/simulator.js');
 const logger = require('../module-4-final-status-logger/logger.js');
 const summary = require('../module-5-summary-exporter/summary.js');
@@ -103,11 +104,27 @@ async function processEmail(email, config, options = {}) {
   const usedAttempts = email.attempts || 0;
   if (usedAttempts >= totalAttempts) {
     await logger.markFailed(email.id, totalAttempts, 'Retry limit exhausted');
+    await attachments.release(email.attachments);
     return;
   }
   const startAttempt = usedAttempts + 1;
 
   await logger.markSending(email.id, startAttempt);
+
+  // The attachment files are downloaded once and reused by every attempt —
+  // a retry must not pay for the download again. A file that cannot be read
+  // is a delivery failure that no retry can fix.
+  let files = [];
+  if (Array.isArray(email.attachments) && email.attachments.length > 0) {
+    try {
+      files = await attachments.loadForDelivery(email.attachments);
+    } catch (err) {
+      const detail = simulator.humanError(err);
+      await logger.logAttempt(email.id, startAttempt, 'FAILURE', detail);
+      await logger.markFailed(email.id, startAttempt, detail);
+      return;
+    }
+  }
 
   for (let attempt = startAttempt; attempt <= totalAttempts; attempt++) {
     if (!scheduled && await dispatchStopped()) {
@@ -121,6 +138,7 @@ async function processEmail(email, config, options = {}) {
         subject: email.subject,
         message: email.message,
         senderName: email.senderName,
+        attachments: files,
       });
 
       const rejected = (info.rejected || []).filter(Boolean).map(String);
@@ -139,6 +157,8 @@ async function processEmail(email, config, options = {}) {
       };
       await logger.logAttempt(email.id, attempt, 'SUCCESS', smtpInfo.response);
       await logger.markDelivered(email.id, attempt, smtpInfo);
+      // The email has gone out — the files have served their purpose.
+      await attachments.release(email.attachments);
       return;
     } catch (err) {
       const detail = simulator.humanError(err);
@@ -148,6 +168,7 @@ async function processEmail(email, config, options = {}) {
 
       if (isLast) {
         await logger.markFailed(email.id, attempt, detail);
+        await attachments.release(email.attachments);
         await waitBetween(config.interEmailDelayMs, scheduled);
         return;
       }
@@ -314,10 +335,15 @@ async function resetQueue() {
   simulator.resetTransport();
   await store.setDispatchRunning(false, false);
   await store.setCurrentProcessingId(null);
+  // The attachment files of the emails that are about to go.
+  const queued = await queue.listEmails();
   await store.deleteCollection('emails');
   await store.deleteCollection('activity');
   await store.statsDoc().set(store.emptyStatsDoc());
   await store.setMeta({ emailSeq: 0, activitySeq: 0 });
+  await Promise.all(
+    queued.map((email) => attachments.release(email.attachments))
+  );
   // A lease left behind by a killed invocation would block the next pass
   // until it expires, so drop it together with the queue.
   await store.clearDispatchLease();

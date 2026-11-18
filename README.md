@@ -74,6 +74,11 @@ An email can be delivered **immediately** or **at a chosen moment**. The
 scheduled delivery is triggered by Google Cloud Tasks, so it goes out whether
 or not the dashboard is open.
 
+An email may also **carry files** — PDF, Office documents, images and video.
+The bytes live in Cloud Storage and are attached to the message when the
+dispatcher delivers it; the email document only keeps a small descriptor per
+file. See [3.1](#31-attachments).
+
 ---
 
 ## 2. Screenshots
@@ -102,12 +107,40 @@ Module 6 — *Scheduled Delivery* — was added later and is described in
 *Responsible for creating and storing email tasks.*
 
 - Add an email with a validated recipient, subject and message
+- **Attach files** — PDF, Word, Excel, PowerPoint, images and video, straight
+  from your machine (see [3.1](#31-attachments) below)
 - Unique IDs are generated automatically (`EML-001`, `EML-002`, …)
 - The queue position of a new email is reported back immediately
 - Empty emails are refused; the form clears after a successful add
 - The FIFO queue is visualised from FRONT to REAR, and a queued email can be removed
 
 `src/modules/module-1-email-queue-creator/` · `functions/src/modules/module-1-email-queue-creator/`
+
+#### 3.1 Attachments
+
+An email may carry files. They are **not** part of the message body and they
+do not travel through the API — the bytes live in Cloud Storage and the email
+document only carries a small descriptor per file.
+
+| | |
+| --- | --- |
+| **Where the bytes live** | Cloud Storage, under `attachments/{uid}/{batch}/{file name}` |
+| **How they get there** | The browser uploads them straight to the bucket, with a progress bar |
+| **Where the rules live** | The server — the browser asks `GET /api/attachments/config` and shows the same limits |
+| **What may be attached** | PDF, Word, Excel, PowerPoint, plain text, images and video (33 extensions) |
+| **How much** | 10 files per email, 16 MB per file, 16 MB in total |
+| **When they are removed** | Once the email has been delivered, failed or was removed from the queue |
+| **Who may attach what** | A signed-in account may only write into its own folder — see `storage.rules` |
+
+The limits keep a message below the 25 MB ceiling every mail server enforces
+(attachments are base64-encoded on their way through SMTP, which grows them by
+a third).
+
+> **Why Storage and not the API?** A Firestore document is capped at 1 MiB and
+> a video is far larger than that. Uploading through the Cloud Function would
+> also put the bytes through a 512 MB function on every single file. The
+> browser therefore uploads straight to the bucket, and the Storage rules
+> (`storage.rules`) are the boundary around it.
 
 ### 2 · Send Simulator
 
@@ -355,7 +388,7 @@ cp .env.example .env.local
 | `VITE_FIREBASE_API_KEY` | only with your own project | Firebase console → Project settings → Your apps → *SDK setup and configuration* → `apiKey` | The browser needs to identify the project in order to open the realtime listeners. It is a **public identifier**, not a secret — it is also readable from the shipped JavaScript. |
 | `VITE_FIREBASE_AUTH_DOMAIN` | only with your own project | Same screen → `authDomain` (`<project>.firebaseapp.com`) | Required by the Firebase SDK to initialise. |
 | `VITE_FIREBASE_PROJECT_ID` | only with your own project | Same screen → `projectId` | Selects the project the SDK talks to. Leave unset to use the value from `.firebaserc`. |
-| `VITE_FIREBASE_STORAGE_BUCKET` | only with your own project | Same screen → `storageBucket` | Required by the SDK initialiser, even if you never use Storage. |
+| `VITE_FIREBASE_STORAGE_BUCKET` | only with your own project | Same screen → `storageBucket` | The fallback bucket for the SDK. The API reports the bucket that actually holds the attachment files (`GET /api/attachments/config`), so this only matters when the server cannot resolve one itself. |
 | `VITE_FIREBASE_MESSAGING_SENDER_ID` | only with your own project | Same screen → `messagingSenderId` | Same — the SDK expects the full config object. |
 | `VITE_FIREBASE_APP_ID` | only with your own project | Same screen → `appId` | Identifies your web app inside the project. |
 | `VITE_FIREBASE_MEASUREMENT_ID` | optional | Same screen → `measurementId` | Only used for Google Analytics. Leave blank to disable analytics. |
@@ -387,6 +420,7 @@ The emulator reads this file automatically. `functions/.env` is gitignored.
 | `SMTP_DRYRUN` | optional | `true` to simulate, `false` to send for real | The safety switch. Leave it `true` while you are setting things up. |
 | `SIMULATION_MODE` | optional | `AUTOMATIC`, `FORCE_SUCCESS` or `FORCE_FAILURE` | Only used while dry-run is on. `FORCE_FAILURE` is how you demonstrate the retry engine without breaking a real mailbox. |
 | `ALLOWED_ORIGIN` | **for deployments** | `https://your-frontend.example.com` | Which browser origins may change state. See below — this one bites. |
+| `STORAGE_BUCKET` | optional | Your bucket name, e.g. `my-project.firebasestorage.app` | The bucket the attachment files live in. Leave it unset and the project default is used — the browser is told the same name by the API, so the two never disagree. |
 
 ### 7.4 `ALLOWED_ORIGIN` — the one setting people get wrong
 
@@ -404,7 +438,7 @@ always open.
 Start / Save / Add do nothing and the banner shows *"Origin not allowed"*. Fix
 `ALLOWED_ORIGIN` on the function and reload.
 
-### 7.5 `firebase.json`, `firestore.rules`, `firestore.indexes.json`
+### 7.5 `firebase.json`, `firestore.rules`, `storage.rules`, `firestore.indexes.json`
 
 These are committed and need no editing to run locally.
 
@@ -413,6 +447,7 @@ These are committed and need no editing to run locally.
 | `firebase.json` | Points the CLI at `functions/`, the rules and the indexes, and declares the emulator ports | The single place that ties the project together |
 | `firestore.rules` | The browser may only **read**; every write goes through the Cloud Function. `_secrets/*` is denied to browsers entirely | This is why the SMTP password can never leak into the client. It is also the app's main security boundary — read the [Security](#17-security) section |
 | `firestore.indexes.json` | The composite index the FIFO query needs (`status` + `seq`) | Without it Firestore rejects the "next queued email" query |
+| `storage.rules` | The boundary around the attachment bucket: a signed-in account may only write into its own folder, capped in size and in content type | The attachment files never travel through the API, so these rules are what keeps one account from attaching another account's file |
 
 ### 7.6 Scheduled delivery — the Cloud Tasks setup
 
@@ -534,6 +569,29 @@ shows the new email's ID and its queue position.
 | **Send Now** | The email is queued *and* the dispatcher starts straight away. |
 | **Schedule for Later** | Opens the scheduling panel (see below). |
 
+### Attaching files
+
+Under the message there is an **Attachments** area. Press *Attach files* (or
+drop a file onto the dashed area) to pick files from your machine:
+
+- **PDF**, **Word** (`.doc`, `.docx`), **Excel** (`.xls`, `.xlsx`, `.csv`),
+  **PowerPoint** (`.ppt`, `.pptx`), **text**, **images** (`.png`, `.jpg`,
+  `.gif`, `.webp`, …) and **video** (`.mp4`, `.mov`, `.webm`, …)
+- Up to **10 files**, **16 MB** each, **16 MB** in total
+- A file that is not an accepted type is refused before it is uploaded, and
+  the reason is shown next to it
+- Every file shows its size and an upload progress bar; a queued email shows
+  its files as a paperclip chip
+
+The files are uploaded the moment you pick them, so pressing *Add to Queue*
+is instant. If you remove a file — or the email cannot be created — the
+uploaded bytes are deleted again, so nothing is left behind in the bucket.
+
+> A deployment that many people use should add a **bucket lifecycle rule**
+> that expires objects under `attachments/` after a day or two. It cleans up
+> the uploads of a form that was abandoned half-way:
+> `gcloud storage buckets update gs://<your-project>.appspot.com --lifecycle-config=expiry.json`
+
 ### The queue panel
 
 Every email is listed from **FRONT** (processed next) to **REAR** (processed last).
@@ -641,8 +699,13 @@ timezone and their dispatch time as extra columns.
 
 ```bash
 npm run build                       # build the dashboard first (see below)
-firebase deploy --only functions,firestore
+firebase deploy --only functions,firestore,storage
 ```
+
+> **Storage is only needed for attachments.** If you never attach a file you
+> can leave it out. The first deploy of the storage rules needs the bucket to
+> exist — `gcloud storage buckets create gs://<your-project>.appspot.com`
+> (or the *Storage* section of the Firebase console) does it.
 
 Before the first deploy, make sure the function knows where the browser comes from:
 
@@ -687,10 +750,14 @@ simple-email-queue-dispatcher/
 │   │   ├── module-1-email-queue-creator/  # Module 1
 │   │   │   ├── components/
 │   │   │   │   ├── AddEmailForm.tsx       # validated "add to queue" form
+│   │   │   │   ├── AttachmentPicker.tsx   # file picker, drop zone, upload progress
 │   │   │   │   ├── DemoDataButton.tsx     # loads the five demo emails
 │   │   │   │   ├── QueuePanel.tsx         # FRONT → REAR visualisation
 │   │   │   │   └── QueueItem.tsx          # status badge, attempt badges, remove
-│   │   │   └── hooks/useQueueActions.ts   # enqueue / remove / demo data
+│   │   │   ├── hooks/
+│   │   │   │   ├── useAttachments.ts      # upload / remove the files
+│   │   │   │   └── useQueueActions.ts     # enqueue / remove / demo data
+│   │   │   └── utils/attachments.ts       # file names, kinds, sizes
 │   │   │
 │   │   ├── module-2-send-simulator/       # Module 2
 │   │   │   ├── components/SettingsPanel.tsx  # SMTP config + simulation mode
@@ -744,7 +811,9 @@ simple-email-queue-dispatcher/
 │   └── src/
 │       ├── routes.js                      # the REST API
 │       ├── modules/
-│       │   ├── module-1-email-queue-creator/queue.js
+│       │   ├── module-1-email-queue-creator/
+│       │   │   ├── queue.js                # validate + store the queued emails
+│       │   │   └── attachments.js          # the attachment rules + the bucket
 │       │   ├── module-2-send-simulator/simulator.js
 │       │   ├── module-3-retry-logic/dispatch.js
 │       │   ├── module-4-final-status-logger/logger.js
@@ -766,11 +835,13 @@ simple-email-queue-dispatcher/
 ├── scripts/
 │   ├── integration-check.mjs              # end-to-end check against the emulator
 │   ├── browser_check.py                   # browser smoke test + screenshots
+│   ├── attachment_check.py                # browser check for the attachment feature
 │   └── responsive_check.py                # layout / accessibility sweep
 │
 ├── docs/screenshots/                      # the images used above
 │
 ├──  firestore.rules                        # deny-by-default; ownership + role checks
+├──  storage.rules                          # the attachment bucket: own folder only
 ├──  SECURITY.md                             # security model and reporting guide
 ├── firestore.indexes.json                 # composite index for the FIFO query
 ├── firebase.json                          # functions + rules + emulator ports
@@ -833,6 +904,7 @@ All endpoints live under the Cloud Function base URL.
 | GET | `/api/emails` · `/api/emails/:id` | 1 | all emails / one email |
 | POST | `/api/emails` · `/api/emails/batch` | 1 | enqueue one / many emails |
 | DELETE | `/api/emails/:id` | 1 | remove an email from the queue |
+| GET | `/api/attachments/config` | 1 | the attachment rules and the bucket the files live in |
 | GET | `/api/activity` | 4 | the activity log |
 | GET | `/api/stats` | 5 | live statistics |
 | GET | `/api/report` | 5 | the full dispatch report (summary + rows) |
@@ -878,6 +950,12 @@ interface Email {
   subject: string;
   message: string;
   senderName?: string | null;
+  attachments: {            // the files that travel with the email
+    name: string;           //   "report.pdf"
+    size: number;           //   the size in bytes
+    contentType: string;    //   derived from the file name, never from the client
+    path: string;           //   "attachments/{uid}/{batch}/{file name}" in Cloud Storage
+  }[];
   status: 'QUEUED' | 'SCHEDULED' | 'SENDING' | 'RETRYING' | 'DELIVERED' | 'FAILED' | 'CANCELLED';
   attempts: number;        // SMTP attempts made
   retries: number;         // attempts - 1
@@ -914,12 +992,16 @@ Firestore layout:
 | `_config/main` | The dashboard-editable configuration (no secrets) |
 | `_secrets/main` | The SMTP password — **denied to browsers by the Firestore rules** |
 
+The attachment **bytes** are not in Firestore at all — they live in Cloud
+Storage under `attachments/{uid}/{batch}/{file name}` and are described on the
+email document by the `attachments` array above.
+
 ---
 
 ## 14. Testing
 
 ```bash
-npm test                      # 72 unit tests, one file per module
+npm test                      # 93 unit tests, one file per module
 npm run test:rules            # 36 Firestore security-rule tests (needs the emulator)
 npm run test:integration      # 142 assertions against the running emulator
 npm run lint                  # oxlint over src, functions, tests and scripts
@@ -927,6 +1009,7 @@ npm run typecheck             # tsc -b
 ```
 
 The unit tests cover the pure logic of each module: the queue validation rules,
+the attachment rules (which types, how many, how large, whose folder),
 the three simulation modes and the dry-run transport, the attempt budget and
 progress maths, the status → counter mapping, and the CSV/JSON exporters.
 
@@ -942,7 +1025,7 @@ against the emulator — including the failure/retry path, pause/resume, email
 removal, the origin guard and the role separation.
 
 ```bash
-npm run dev                   # in one terminal (auth + functions + firestore)
+npm run dev                   # in one terminal (auth + functions + firestore + storage)
 npm run test:rules            # in another
 npm run test:integration      # in another
 ```
@@ -953,6 +1036,7 @@ Two optional browser checks (they need `pip install playwright` and
 ```bash
 python scripts/browser_check.py     # signs in, renders the dashboard, captures screenshots
 python scripts/responsive_check.py  # layout + accessibility sweep over 4 breakpoints
+python scripts/attachment_check.py  # attaches a file, queues it, delivers it
 ```
 
 ---
@@ -963,7 +1047,7 @@ python scripts/responsive_check.py  # layout + accessibility sweep over 4 breakp
 | --- | --- |
 | `npm run dev` | Firebase emulators + Vite dev server (concurrently) |
 | `npm run dev:web` | Vite dev server only |
-| `npm run dev:emulators` | Functions + Firestore emulators only |
+| `npm run dev:emulators` | Auth + Functions + Firestore + Storage + Tasks emulators |
 | `npm run dev:setup` | `npm install --prefix functions` |
 | `npm run build` | `tsc -b` + production Vite build |
 | `npm run typecheck` | TypeScript project build (types only) |
@@ -994,6 +1078,9 @@ python scripts/responsive_check.py  # layout + accessibility sweep over 4 breakp
 | The icon in a field sits on top of the text | A Tailwind padding utility is being overridden by a component class | Component classes live in the `components` CSS layer — see [Contributing](#18-contributing) |
 | *"No emails in the queue"* | The queue is empty | Add an email or press **Load Demo Data** |
 | *"Please enter a valid email address."* | The recipient failed validation | Use a full address, e.g. `student@example.com` |
+| *"… is not a file type this dispatcher accepts."* | The file type is not on the list | PDF, Word, Excel, PowerPoint, text, images and video — nothing else |
+| *"… could not be uploaded."* | The upload was refused | Check the size limit (16 MB per file, 16 MB per email) and that the Storage emulator is running |
+| *"… is no longer in storage. Attach it again."* | The file was removed between the upload and the save | Pick the file again |
 | Emails always fail with `535` / `535 5.7.8` | The provider rejects the login | You are most likely using your account password — generate an **app password** |
 | The git history shows the demo project's data | `firestore.rules` allows anonymous reads | See [Security](#17-security) before putting real recipients in the queue |
 
@@ -1018,7 +1105,13 @@ python scripts/responsive_check.py  # layout + accessibility sweep over 4 breakp
 - **Rate limiting** — 120 state-changing requests per minute per IP by default
   (`RATE_LIMIT_MAX`).
 - **Payload limits** — request bodies are capped at 100 kB and a batch may hold
-  at most 100 emails.
+  at most 100 emails. The attachment files never travel through the API, so
+  this limit does not apply to them.
+- **The attachment bucket is closed to everybody but its owner.** `storage.rules`
+  lets a signed-in account write only into `attachments/{its own uid}/…`, caps
+  every upload at 16 MB and only accepts content types a mail server accepts.
+  The server refuses an attachment whose path is not in the caller's folder,
+  so a forged descriptor cannot borrow somebody else's file.
 - **No secrets in the repository.** `.env`, `*.pem`, `*.key` and service-account
   files are all in `.gitignore`.
 - **The Firebase web configuration is public by design** — it identifies the

@@ -1,6 +1,7 @@
-import { RefreshCw, CheckCircle, XCircle, Clock, Zap, Trash2, CalendarClock, Ban } from 'lucide-react';
+import { RefreshCw, CheckCircle, XCircle, Clock, Zap, Trash2, CalendarClock, Ban, Paperclip } from 'lucide-react';
 import type { Email, EmailStatus } from '../../../shared/types/email';
 import { formatTime } from '../../../shared/utils/format';
+import { formatBytes } from '../utils/attachments';
 
 interface QueueItemProps {
   email: Email;
@@ -99,6 +100,22 @@ export function QueueItem({ email, position, isActive, onRemove }: QueueItemProp
           )}
         </div>
       </div>
+
+      {/* The files that travel with the email. */}
+      {email.attachments && email.attachments.length > 0 && (
+        <div className="mt-1.5 pt-1.5 border-t border-hairline-soft flex flex-wrap gap-1">
+          {email.attachments.map((file, i) => (
+            <span
+              key={`${email.id}-${i}`}
+              className="badge badge-slate"
+              title={`${file.name} — ${formatBytes(file.size)}`}
+            >
+              <Paperclip className="w-3 h-3" />
+              <span className="max-w-[150px] truncate">{file.name}</span>
+            </span>
+          ))}
+        </div>
+      )}
 
       {/* Attempt history */}
       {email.logs.length > 0 && (

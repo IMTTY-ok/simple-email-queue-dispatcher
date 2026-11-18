@@ -18,6 +18,7 @@
  */
 
 const store = require('../../shared/store.js');
+const attachments = require('./attachments.js');
 
 /** Matches a single, syntactically valid email address. */
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -34,10 +35,12 @@ const LIMITS = {
  * Validate one queued email.
  *
  * @param {unknown} input raw request body
- * @returns {{ ok: true, value: {recipient:string,subject:string,message:string,senderName:string} }
+ * @param {string} [uid] the uid of the signed-in account — the attachments
+ *   have to live in that account's own storage folder
+ * @returns {{ ok: true, value: {recipient:string,subject:string,message:string,senderName:string,attachments:object[]} }
  *          | { ok: false, error: string }}
  */
-function validateEmail(input) {
+function validateEmail(input, uid = null) {
   const source = input && typeof input === 'object' ? input : {};
   const recipient = String(source.recipient ?? '').trim();
   const subject = String(source.subject ?? '').trim();
@@ -54,7 +57,15 @@ function validateEmail(input) {
   if (message.length > LIMITS.message) return { ok: false, error: 'Message is too long.' };
   if (senderName.length > LIMITS.senderName) return { ok: false, error: 'Sender name is too long.' };
 
-  return { ok: true, value: { recipient, subject, message, senderName } };
+  // An email may carry files. They were uploaded to Cloud Storage by the
+  // browser; the API only receives their descriptors.
+  const files = attachments.validateAttachments(source.attachments, uid);
+  if (!files.ok) return { ok: false, error: files.error };
+
+  return {
+    ok: true,
+    value: { recipient, subject, message, senderName, attachments: files.value },
+  };
 }
 
 /**
@@ -64,7 +75,7 @@ function validateEmail(input) {
  * the scheduling fields. The default stays exactly what it was: an immediate
  * email that waits in the FIFO queue.
  */
-async function makeEmail({ recipient, subject, message, senderName }, retryLimit, createdBy, options = {}) {
+async function makeEmail({ recipient, subject, message, senderName, attachments: files }, retryLimit, createdBy, options = {}) {
   const seq = await store.claimSeq('emailSeq');
   const now = store.stamp();
   const scheduled = options && options.deliveryMode === 'SCHEDULED';
@@ -76,6 +87,9 @@ async function makeEmail({ recipient, subject, message, senderName }, retryLimit
     subject,
     message,
     senderName: senderName || null,
+    // The files that travel with this email. Only the descriptors live on
+    // the document; the bytes are in Cloud Storage (see attachments.js).
+    attachments: Array.isArray(files) ? files : [],
     // The account that created the email. The Firestore rules use this to keep
     // an operator inside their own queue entries.
     createdBy: createdBy || null,
@@ -121,6 +135,9 @@ async function makeEmail({ recipient, subject, message, senderName }, retryLimit
  */
 async function enqueue(input, retryLimit = 3, createdBy = null, options = {}) {
   const email = await makeEmail(input, retryLimit, createdBy, options);
+  // The files have to be in the bucket before the email exists — otherwise
+  // the queue would hold an email whose attachments cannot be delivered.
+  await attachments.assertStored(email.attachments);
   await store.emailsCol().doc(email.id).set(email);
   // A scheduled email waits for its own moment — it is counted as
   // `scheduled`, never as `queued`.
@@ -193,6 +210,9 @@ async function removeEmail(id) {
   if (key) delta[key] = -1;
   await store.emailsCol().doc(id).delete();
   await store.bumpStats(delta);
+  // The email is gone, so its files are gone too — the bytes are only kept
+  // for as long as the email needs them.
+  await attachments.release(removed.attachments);
   return removed;
 }
 

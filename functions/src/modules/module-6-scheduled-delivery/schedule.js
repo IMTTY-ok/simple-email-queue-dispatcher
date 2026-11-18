@@ -31,10 +31,20 @@ const { Timestamp } = require('firebase-admin/firestore');
 
 const store = require('../../shared/store.js');
 const queue = require('../module-1-email-queue-creator/queue.js');
+const attachments = require('../module-1-email-queue-creator/attachments.js');
 const logger = require('../module-4-final-status-logger/logger.js');
 const clock = require('./clock.js');
 const tasks = require('./tasks.js');
 const guard = require('./guard.js');
+
+/**
+ * A short note about the files an email carries, for the activity log.
+ */
+function attachmentNote(email) {
+  const count = Array.isArray(email.attachments) ? email.attachments.length : 0;
+  if (count === 0) return '';
+  return ` · ${count} attachment${count === 1 ? '' : 's'}`;
+}
 
 /**
  * How many emails are waiting for their moment.
@@ -55,7 +65,7 @@ async function scheduledCount() {
  *                  |{ok:false,error:string,status?:number}>}
  */
 async function createScheduledEmail({ input, retryLimit = 3, createdBy = null, dispatchUrl = null }) {
-  const validation = queue.validateEmail(input);
+  const validation = queue.validateEmail(input, createdBy);
   if (!validation.ok) return { ok: false, error: validation.error, status: 400 };
 
   const source = input && typeof input === 'object' ? input : {};
@@ -108,7 +118,7 @@ async function createScheduledEmail({ input, retryLimit = 3, createdBy = null, d
 
   await logger.pushActivity({
     emailId: email.id,
-    message: `${email.id} — scheduled for ${clock.describeInTimeZone(scheduledAtUtc, timezone)}`,
+    message: `${email.id} — scheduled for ${clock.describeInTimeZone(scheduledAtUtc, timezone)}${attachmentNote(email)}`,
     type: 'info',
     kind: 'scheduled',
     createdBy: email.createdBy || null,
@@ -162,6 +172,9 @@ async function cancelScheduledEmail({ id, scope = null }) {
     // Best effort — the status change above already makes the task harmless.
     await tasks.deleteTask(taskId);
   }
+
+  // The email will never be delivered, so its files are released now.
+  await attachments.release(email.attachments);
 
   await logger.pushActivity({
     emailId: id,

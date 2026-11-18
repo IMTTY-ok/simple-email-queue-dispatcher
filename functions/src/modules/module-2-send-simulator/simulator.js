@@ -159,9 +159,14 @@ async function verifyConnection(config) {
 
 /**
  * Perform one delivery attempt.
+ *
+ * @param {object} config resolved runtime configuration
+ * @param {object} mail `{ recipient, subject, message, senderName, attachments }`
+ *   `attachments` are Nodemailer attachment objects (filename, content
+ *   buffer, content type) — the caller downloads them from Cloud Storage.
  * @returns the Nodemailer `sentMessage` info object
  */
-async function sendSingleMail(config, { recipient, subject, message, senderName }) {
+async function sendSingleMail(config, { recipient, subject, message, senderName, attachments }) {
   const fromAddress = config.smtp.fromEmail || config.smtp.user;
   const fromName = config.smtp.fromName || senderName || 'Email Dispatcher';
 
@@ -172,6 +177,12 @@ async function sendSingleMail(config, { recipient, subject, message, senderName 
     text: message,
     html: wrapHtml(subject, message, senderName),
   };
+
+  // The files travel with the message. Nodemailer encodes them into the
+  // MIME body; the dry-run transport simply ignores them.
+  if (Array.isArray(attachments) && attachments.length > 0) {
+    mail.attachments = attachments;
+  }
 
   const t = getTransport(config);
   return t.sendMail(mail);
