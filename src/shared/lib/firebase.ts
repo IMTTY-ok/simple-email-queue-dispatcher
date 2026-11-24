@@ -16,7 +16,12 @@ import { connectStorageEmulator, getStorage, type FirebaseStorage } from 'fireba
  * (HTTP referrers + the Firebase APIs that are actually needed).
  */
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || '[REDACTED-FIREBASE-WEB-API-KEY]',
+  // The Firebase web API key is a public client identifier, not a secret, but it
+  // is kept out of source control to satisfy secret-scanning policies. Supply it
+  // through VITE_FIREBASE_API_KEY (see `.env.example`). The remaining values
+  // keep their demo-project fallbacks. None of these may ever be a
+  // service-account key or any other privileged credential.
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'email-dispatcher-43118.firebaseapp.com',
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'email-dispatcher-43118',
   storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'email-dispatcher-43118.firebasestorage.app',

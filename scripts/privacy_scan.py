@@ -46,10 +46,10 @@ SKIP_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".ico", ".woff", ".woff2", ".t
 # Values that look like credentials but are not secrets. They are listed here
 # so the scan stays meaningful instead of crying wolf.
 EXPECTED = {
-    # The Firebase *web* configuration. It is compiled into the browser bundle
-    # and is readable by anyone - it identifies the project, it does not grant
-    # access. The real boundary is the Firestore rules.
-    "[REDACTED-FIREBASE-WEB-API-KEY]": "public Firebase web API key",
+    # Firebase web API keys are public client identifiers, not secrets, but they
+    # are no longer hard-coded in source; they come from VITE_FIREBASE_API_KEY.
+    # The real boundary is the Firestore rules. No key value is allow-listed
+    # here so that any accidental re-introduction is caught by this scan.
     # A placeholder in the example environment files.
     "you@gmail.com": "placeholder address",
     # A deliberately invalid token used to prove the API rejects bad tokens.
