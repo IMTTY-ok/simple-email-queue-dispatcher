@@ -53,6 +53,8 @@ export default defineConfig({
     chunkSizeWarningLimit: 700,
   },
   server: {
+    port: 5173,
+    strictPort: true,
     proxy: {
       // Development proxy → Firebase Cloud Functions emulator (functions)
       '/api': {

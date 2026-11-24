@@ -35,11 +35,47 @@ const DEFAULT_ORIGINS = [
   'http://127.0.0.1:4000',
 ];
 
-const allowedOrigins = (process.env.ALLOWED_ORIGIN || '')
-  .split(',')
-  .map((s) => s.trim())
-  .filter(Boolean);
-const originList = allowedOrigins.length > 0 ? allowedOrigins : DEFAULT_ORIGINS;
+/**
+ * Parse the configured origins.
+ *
+ * - Trim whitespace around each entry (a stray space would otherwise make an
+ *   otherwise valid origin fail an exact comparison).
+ * - Drop empties so a trailing comma or a blank `ALLOWED_ORIGIN=` cannot poison
+ *   the list.
+ * - Validate each entry as an absolute origin (scheme + host [+ port]) so a
+ *   malformed value can never silently match or break the comparison.
+ */
+function parseOrigins(value) {
+  return String(value || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .filter((origin) => {
+      try {
+        const url = new URL(origin);
+        return url.protocol === 'http:' || url.protocol === 'https:';
+      } catch {
+        return false;
+      }
+    });
+}
+
+const configuredOrigins = parseOrigins(process.env.ALLOWED_ORIGIN);
+
+/**
+ * The effective allowlist.
+ *
+ * The built-in local development origins are *always* present, even when
+ * `ALLOWED_ORIGIN` is set. A stale or partial environment value (for example
+ * one left over from an older setup that only listed `http://localhost:5173`)
+ * can therefore never silently remove the defaults that local development
+ * depends on. Production origins supplied through `ALLOWED_ORIGIN` are added
+ * on top, never replacing the defaults.
+ *
+ * Comparison is performed with exact string equality (see `isAllowedOrigin`),
+ * never with substring matching.
+ */
+const originList = Array.from(new Set([...DEFAULT_ORIGINS, ...configuredOrigins]));
 
 /** Methods that change state. They must come from an allowed browser origin. */
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
@@ -95,10 +131,25 @@ app.use((req, res, next) => {
   next();
 });
 
+/** Exact-origin check: protocol + host + port, no substring matching. */
+function isAllowedOrigin(origin) {
+  if (!origin) return false;
+  // Normalise via URL so trivial differences (trailing slash, casing of the
+  // scheme) cannot bypass or break the comparison. The host/port comparison
+  // stays exact.
+  try {
+    const url = new URL(origin);
+    const normalised = `${url.protocol}//${url.host}`;
+    return originList.includes(normalised) || originList.includes(origin.trim());
+  } catch {
+    return originList.includes(String(origin).trim());
+  }
+}
+
 app.use(cors({
   origin(origin, callback) {
     // allow non-browser clients (curl, health checks) that send no Origin
-    if (!origin || originList.includes(origin)) {
+    if (!origin || isAllowedOrigin(origin)) {
       return callback(null, true);
     }
     return callback(null, false);
@@ -118,7 +169,7 @@ app.use((req, res, next) => {
   if (!MUTATING_METHODS.has(req.method)) return next();
 
   const origin = req.get('Origin');
-  if (!origin || !originList.includes(origin)) {
+  if (!origin || !isAllowedOrigin(origin)) {
     return res.status(403).json({
       ok: false,
       error: 'Origin not allowed. Set ALLOWED_ORIGIN on the function to include this origin.',

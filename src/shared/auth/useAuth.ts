@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   createUserWithEmailAndPassword,
   onAuthStateChanged,
+  sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signOut as firebaseSignOut,
   updateProfile,
@@ -113,12 +114,22 @@ export function useAuth() {
     setState({ user: null, profile: null, role: null, loading: false, error: null });
   }, []);
 
+  const sendPasswordReset = useCallback(async (email: string) => {
+    try {
+      await sendPasswordResetEmail(auth, email.trim());
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: readableAuthError(err) };
+    }
+  }, []);
+
   return {
     ...state,
     isAdmin: state.role === 'admin',
     signIn,
     signUp,
     signOut,
+    sendPasswordReset,
   };
 }
 

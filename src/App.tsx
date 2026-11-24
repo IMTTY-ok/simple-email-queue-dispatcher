@@ -124,7 +124,14 @@ export default function App() {
   }
 
   if (!auth.user) {
-    return <LoginScreen onSignIn={auth.signIn} onSignUp={auth.signUp} error={auth.error} />;
+    return (
+      <LoginScreen
+        onSignIn={auth.signIn}
+        onSignUp={auth.signUp}
+        onResetPassword={auth.sendPasswordReset}
+        error={auth.error}
+      />
+    );
   }
 
   return (
