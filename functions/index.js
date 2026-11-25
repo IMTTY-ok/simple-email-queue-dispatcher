@@ -33,6 +33,9 @@ const DEFAULT_ORIGINS = [
   'http://127.0.0.1:4173',
   'http://localhost:4000',
   'http://127.0.0.1:4000',
+  // Production hosting origins for the Firebase project this repo targets.
+  'https://email-dispatcher-app.web.app',
+  'https://email-dispatcher-app.firebaseapp.com',
 ];
 
 /**

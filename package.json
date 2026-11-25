@@ -30,6 +30,9 @@
     "test": "node --experimental-strip-types --disable-warning=ExperimentalWarning --test \"tests/*.test.ts\" \"tests/*.test.js\"",
     "test:integration": "node scripts/integration-check.mjs",
     "preview": "vite preview",
+    "deploy:firebase:hosting": "npm run build && firebase deploy --only hosting",
+    "deploy:firebase:backend": "firebase deploy --only functions,firestore,storage",
+    "deploy:firebase": "npm run build && firebase deploy",
     "test:rules": "node --experimental-strip-types --disable-warning=ExperimentalWarning --test \"tests/rules/*.test.ts\"",
     "scan:privacy": "python scripts/privacy_scan.py"
   },

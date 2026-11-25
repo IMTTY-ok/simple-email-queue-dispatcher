@@ -749,6 +749,21 @@ Firebase Hosting, GitHub Pages or any web server.
 > When you deploy to a different origin, add that origin to `ALLOWED_ORIGIN` on
 > the function **before** you test the buttons.
 
+### Deploying the dashboard to Netlify
+
+This repo ships a `netlify.toml` that builds with `npm run build` and publishes
+`dist/`. In the Netlify site settings set:
+
+- `VITE_API_URL` = `https://us-central1-<your-project>.cloudfunctions.net/backend`
+- the `VITE_FIREBASE_*` values from your Firebase web app config
+
+Then add the Netlify site origin (e.g. `https://your-site.netlify.app`) to
+`ALLOWED_ORIGIN` on the Firebase function before testing the buttons.
+
+> Cloud Functions for Firebase require the **Blaze (pay-as-you-go)** plan; the
+> Spark (free) plan cannot deploy functions. Blaze includes a generous free
+> tier and light usage may cost $0, but a billing account is required.
+
 ---
 
 ## 10. Project structure

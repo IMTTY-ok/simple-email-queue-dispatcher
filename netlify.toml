@@ -1,0 +1,21 @@
+# Netlify deployment configuration for the Email Queue Dispatcher dashboard.
+#
+# The backend (Cloud Functions + Firestore) is hosted on Firebase; only the
+# static dashboard bundle is served from Netlify. Set VITE_API_URL in the
+# Netlify site settings to the deployed function URL, e.g.
+#   https://us-central1-email-dispatcher-app.cloudfunctions.net/backend
+# and set ALLOWED_ORIGIN on the Firebase function to this site's origin.
+
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# Single-page app fallback (the dashboard has no client-side router, but this
+# keeps deep links working if one is added later).
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
